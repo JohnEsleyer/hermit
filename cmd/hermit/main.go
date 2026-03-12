@@ -61,6 +61,7 @@ func main() {
 
 	fs := http.FileServer(http.Dir("./dashboard/public"))
 	http.Handle("/dashboard/", http.StripPrefix("/dashboard/", fs))
+	http.Handle("/", fs)
 
 	http.HandleFunc("/api/auth/login", apiServer.HandleLogin)
 	http.HandleFunc("/api/auth/logout", apiServer.HandleLogout)
