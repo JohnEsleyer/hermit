@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/hermit/core/internal/cloudflare"
 	"github.com/hermit/core/internal/db"
 	"github.com/hermit/core/internal/docker"
 	"github.com/hermit/core/internal/llm"
@@ -20,19 +22,143 @@ import (
 type Server struct {
 	db     *db.DB
 	ws     *workspace.Workspace
-	bot    *telegram.Bot
-	llm    *llm.Client
-	docker *docker.Client
+	bot      *telegram.Bot
+	llm      *llm.Client
+	docker   *docker.Client
+	tunnels  *cloudflare.TunnelManager
 }
 
-func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client) *Server {
+func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client, tunnels *cloudflare.TunnelManager) *Server {
 	return &Server{
-		db:     database,
-		ws:     ws,
-		bot:    bot,
-		llm:    llmClient,
-		docker: dockerClient,
+		db:      database,
+		ws:      ws,
+		bot:     bot,
+		llm:     llmClient,
+		docker:  dockerClient,
+		tunnels: tunnels,
 	}
+}
+
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type LoginResponse struct {
+	Success            bool   `json:"success"`
+	MustChangePassword bool   `json:"mustChangePassword"`
+	Error              string `json:"error,omitempty"`
+}
+
+func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		json.NewEncoder(w).Encode(LoginResponse{Success: false, Error: "Invalid request"})
+		return
+	}
+
+	id, mustChange, err := s.db.VerifyUser(req.Username, req.Password)
+	if err != nil || id == 0 {
+		json.NewEncoder(w).Encode(LoginResponse{Success: false, Error: "Invalid credentials"})
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "session",
+		Value:    fmt.Sprintf("%d", id),
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   86400,
+	})
+
+	json.NewEncoder(w).Encode(LoginResponse{
+		Success:            true,
+		MustChangePassword: mustChange,
+	})
+}
+
+func (s *Server) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	http.SetCookie(w, &http.Cookie{
+		Name:   "session",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
+
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	session, err := r.Cookie("session")
+	if err != nil || session.Value == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		NewPassword string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewPassword == "" {
+		json.NewEncoder(w).Encode(map[string]string{"error": "New password required"})
+		return
+	}
+
+	var userID int64
+	userID, _ = strconv.ParseInt(session.Value, 10, 64)
+
+	username, _, err := s.db.GetUserByID(userID)
+	if err != nil || username == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := s.db.ChangePassword(username, req.NewPassword); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to change password"})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+func (s *Server) HandleCheckAuth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	session, err := r.Cookie("session")
+	if err != nil || session.Value == "" {
+		json.NewEncoder(w).Encode(map[string]bool{"authenticated": false})
+		return
+	}
+
+	var userID int64
+	userID, _ = strconv.ParseInt(session.Value, 10, 64)
+
+	username, mustChange, err := s.db.GetUserByID(userID)
+	if err != nil || username == "" {
+		json.NewEncoder(w).Encode(map[string]bool{"authenticated": false})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"authenticated":      true,
+		"username":           username,
+		"mustChangePassword": mustChange,
+	})
 }
 
 type TestRequest struct {
@@ -174,6 +300,39 @@ func (s *Server) HandleAgentDetail(w http.ResponseWriter, r *http.Request) {
 			}
 			agent.ContainerID = containerName
 			agent.Status = "running"
+			
+			// Setup Tunnel/Webhook
+			domainMode, _ := s.db.GetSetting("domain_mode")
+			var webhookURL string
+			if domainMode == "true" {
+			    baseDomain, _ := s.db.GetSetting("agents_domain")
+			    webhookURL = fmt.Sprintf("https://%s.%s/webhook/", strings.ToLower(agent.Name), baseDomain)
+			} else {
+			    portStr := os.Getenv("PORT")
+			    if portStr == "" {
+			        portStr = "3000"
+			    }
+			    portInt, _ := strconv.Atoi(portStr)
+			    
+			    url, err := s.tunnels.StartQuickTunnel("agent-"+agent.Name, portInt)
+			    if err == nil {
+			        webhookURL = url + "/webhook/"
+			        agent.TunnelURL = url
+					// Save tunnel status in DB
+					s.db.CreateTunnel(&db.Tunnel{
+						AgentID:        agent.ID,
+						TunnelUUID:     "quick-" + agent.Name,
+						TunnelName:     "agent-" + agent.Name,
+						PublicHostname: url,
+						Status:         "healthy",
+					})
+			    }
+			}
+			
+			if webhookURL != "" && s.bot != nil {
+			    s.bot.SetWebhook(webhookURL)
+			}
+			
 			s.db.UpdateAgent(agent)
 			json.NewEncoder(w).Encode(map[string]bool{"success": true})
 		} else if action == "stop" {
@@ -181,8 +340,15 @@ func (s *Server) HandleAgentDetail(w http.ResponseWriter, r *http.Request) {
 				s.docker.Stop(agent.ContainerID)
 				s.docker.Remove(agent.ContainerID)
 			}
+			
+			if s.tunnels != nil {
+			    s.tunnels.StopTunnel("agent-"+agent.Name)
+			}
+			s.db.DeleteTunnelByAgentID(agent.ID)
+			
 			agent.ContainerID = ""
 			agent.Status = "stopped"
+			agent.TunnelURL = ""
 			s.db.UpdateAgent(agent)
 			json.NewEncoder(w).Encode(map[string]bool{"success": true})
 		} else {
@@ -236,6 +402,10 @@ func (s *Server) HandleWorkspaceOut(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		if s.ws == nil {
+			json.NewEncoder(w).Encode(map[string][]string{"files": {}})
+			return
+		}
 		files, err := s.ws.ListFiles(s.ws.OutDir)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -314,6 +484,9 @@ func (s *Server) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) UploadToWorkspace(userID, filename string, fileData []byte) error {
+	if s.ws == nil {
+		return fmt.Errorf("workspace not configured")
+	}
 	inPath := filepath.Join("in", userID)
 	if err := s.ws.WriteFile(filepath.Join(inPath, filename), fileData); err != nil {
 		return err
@@ -323,6 +496,9 @@ func (s *Server) UploadToWorkspace(userID, filename string, fileData []byte) err
 }
 
 func (s *Server) DeliverFile(chatID, filename string) error {
+	if s.ws == nil {
+		return fmt.Errorf("workspace not configured")
+	}
 	data, err := s.ws.ReadFile(filepath.Join("out", filename))
 	if err != nil {
 		return err

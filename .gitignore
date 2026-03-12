@@ -46,3 +46,7 @@ build/
 # Temporary files
 tmp/
 temp/
+
+# Others
+codebase.txt
+textify.yaml

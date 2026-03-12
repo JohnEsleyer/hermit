@@ -232,6 +232,21 @@ func (b *Bot) AnswerCallbackQuery(callbackID, text string) error {
 	return nil
 }
 
+func (b *Bot) SetWebhook(webhookURL string) error {
+	url := fmt.Sprintf("%s/bot%s/setWebhook?url=%s&drop_pending_updates=true", b.apiURL, b.token, webhookURL)
+	resp, err := b.http.Get(url)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error: %d - %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
 func (b *Bot) GetFile(fileID string) (string, error) {
 	url := fmt.Sprintf("%s/bot%s/getFile?file_id=%s", b.apiURL, b.token, fileID)
 	resp, err := b.http.Get(url)

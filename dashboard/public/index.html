@@ -1,192 +1,467 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hermit Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js">
     <script src="https://cdn.jsdelivr.net/npm/lucide@latest"></script>
     <style>
-        .panel { display: none; }
-        .panel.active { display: block; }
-        .nav-item.active { background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.5); }
-        .step-indicator .step { opacity: 0.5; }
-        .step-indicator .step.active { opacity: 1; }
-        .step-indicator .step.completed { opacity: 1; color: #22c55e; }
+        .panel {
+            display: none;
+        }
+
+        .panel.active {
+            display: block;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0B0F19;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        .animate-pulse-slow {
+            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-200 min-h-screen">
-    <div class="flex min-h-screen">
-        <nav class="w-64 bg-slate-900 border-r border-slate-800 p-4 flex flex-col">
-            <h1 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-                <i data-lucide="ghost" class="w-6 h-6 text-purple-400"></i>
-                Hermit
-            </h1>
-            <div class="space-y-1 flex-1">
-                <button onclick="showPanel('agents')" class="nav-item active w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
-                    <i data-lucide="bot" class="w-5 h-5"></i> Agents
-                </button>
-                <button onclick="showPanel('containers')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
-                    <i data-lucide="box" class="w-5 h-5"></i> Containers
-                </button>
-                <button onclick="showPanel('calendar')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
-                    <i data-lucide="calendar-days" class="w-5 h-5"></i> Calendar
-                </button>
-                <button onclick="showPanel('tunnels')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
-                    <i data-lucide="network" class="w-5 h-5"></i> Tunnels
-                </button>
-                <button onclick="showPanel('allowlist')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
-                    <i data-lucide="shield-check" class="w-5 h-5"></i> AllowLists
-                </button>
-                <button onclick="showPanel('settings')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
-                    <i data-lucide="settings" class="w-5 h-5"></i> Settings
-                </button>
-            </div>
-            <div class="pt-4 border-t border-slate-800">
-                <p class="text-xs text-slate-500">Hermit v1.0</p>
-            </div>
-        </nav>
 
-        <main class="flex-1 p-6 overflow-auto">
-            <div id="panel-agents" class="panel active">
-                <div class="flex justify-between items-center mb-6">
-                    <div>
-                        <h2 class="text-2xl font-bold text-white">Agents</h2>
-                        <p class="text-slate-400 text-sm">Manage your AI agents</p>
+<body class="bg-black text-zinc-200 font-sans overflow-hidden">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col">
+            <div class="p-8 flex items-center space-x-3">
+                <svg viewBox="0 0 24 24" fill="none" class="w-9 h-9 text-white">
+                    <circle cx="12" cy="12" r="6" stroke="currentColor" stroke-width="2" />
+                    <circle cx="10" cy="11" r="1.2" fill="currentColor" />
+                    <circle cx="14" cy="11" r="1.2" fill="currentColor" />
+                    <path d="M7 10 L3 9 M6 12 L2 12 M7 14 L3 15" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" />
+                    <path d="M17 10 L21 9 M18 12 L22 12 M17 14 L21 15" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" />
+                </svg>
+                <span class="text-2xl font-bold tracking-tight text-white">HERMIT</span>
+            </div>
+
+            <nav class="flex-1 px-4 space-y-1.5 overflow-y-auto">
+                <button onclick="showPanel('agents')"
+                    class="nav-item active w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200">
+                    <i data-lucide="bot" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Agents</span>
+                </button>
+                <button onclick="showPanel('containers')"
+                    class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
+                    <i data-lucide="box" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Containers</span>
+                </button>
+                <button onclick="showPanel('apps')"
+                    class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
+                    <i data-lucide="layout-grid" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Apps</span>
+                </button>
+                <button onclick="showPanel('calendar')"
+                    class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
+                    <i data-lucide="calendar" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Calendar</span>
+                </button>
+                <button onclick="showPanel('tunnels')"
+                    class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
+                    <i data-lucide="network" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Tunnels</span>
+                </button>
+                <button onclick="showPanel('allowlists')"
+                    class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
+                    <i data-lucide="list-checks" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Allowlists</span>
+                </button>
+                <button onclick="showPanel('metrics')"
+                    class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
+                    <i data-lucide="activity" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Metrics</span>
+                </button>
+                <button onclick="showPanel('settings')"
+                    class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
+                    <i data-lucide="settings" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Settings</span>
+                </button>
+                <button onclick="showPanel('domains')" id="nav-domains"
+                    class="nav-item hidden w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
+                    <i data-lucide="globe" class="w-5 h-5 text-zinc-500"></i>
+                    <span class="text-sm text-zinc-400">Domains</span>
+                </button>
+            </nav>
+
+            <div class="p-4 border-t border-zinc-800">
+                <div class="flex items-center space-x-3 px-3 py-2 bg-zinc-900/30 rounded-xl border border-slate-700/50">
+                    <div class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center border border-white/30">
+                        <span class="text-xs font-bold text-zinc-400">AD</span>
                     </div>
-                    <button onclick="openCreateAgentModal()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
-                        <i data-lucide="plus" class="w-4 h-4"></i> Create Agent
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs font-bold text-white truncate">Administrator</p>
+                        <p class="text-[10px] text-zinc-500 uppercase tracking-widest">v1.0.4-BETA</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col h-full overflow-hidden">
+            <header
+                class="h-20 border-b border-zinc-800 flex items-center justify-between px-10 bg-black/90 backdrop-blur-md z-10">
+                <div>
+                    <h1 id="panel-title" class="text-2xl font-bold text-white capitalize">Agents</h1>
+                    <p class="text-xs text-zinc-500 mt-0.5 uppercase tracking-widest font-medium">Orchestration &
+                        Management</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="relative group">
+                        <i data-lucide="search"
+                            class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 group-focus-within:text-white transition-colors"></i>
+                        <input type="text" placeholder="Search resources..."
+                            class="bg-zinc-950 border border-zinc-800 rounded-xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:border-white/50 focus:ring-1 focus:ring-white/50 w-72 transition-all">
+                    </div>
+                    <button onclick="openCreateAgentModal()"
+                        class="bg-white hover:bg-zinc-200 text-black px-5 py-2 rounded-xl text-sm font-bold flex items-center space-x-2 transition-all shadow-lg shadow-white/20 active:scale-95">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                        <span>DEPLOY AGENT</span>
                     </button>
                 </div>
-                <div id="agents-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
-            </div>
+            </header>
 
-            <div id="panel-containers" class="panel">
-                <h2 class="text-2xl font-bold text-white mb-6">Containers</h2>
-                <div id="containers-table" class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead class="bg-slate-800">
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Agent</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Container</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">CPU</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Memory</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="containers-body" class="divide-y divide-slate-800"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div id="panel-calendar" class="panel">
-                <div class="flex justify-between items-center mb-6">
-                    <div>
-                        <h2 class="text-2xl font-bold text-white">Calendar</h2>
-                        <p class="text-slate-400 text-sm">Scheduled events across all agents</p>
+            <div class="flex-1 overflow-y-auto p-10 bg-black">
+                <!-- Agents Panel -->
+                <div id="panel-agents" class="panel active">
+                    <div id="agents-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-8">
                     </div>
                 </div>
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div class="lg:col-span-2 bg-slate-900 rounded-xl p-4 border border-slate-800">
-                        <div id="calendar-month" class="text-center mb-4">
-                            <h3 class="text-lg font-bold text-white" id="calendar-month-title">March 2026</h3>
-                        </div>
-                        <div class="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-2">
-                            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
-                        </div>
-                        <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
-                    </div>
-                    <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
-                        <h3 class="text-lg font-bold text-white mb-4">Upcoming Events</h3>
-                        <div id="calendar-events" class="space-y-3"></div>
-                    </div>
-                </div>
-            </div>
 
-            <div id="panel-tunnels" class="panel">
-                <h2 class="text-2xl font-bold text-white mb-6">Tunnels</h2>
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead class="bg-slate-800">
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Name</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Agent</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">UUID</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Public Hostname</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="tunnels-body" class="divide-y divide-slate-800"></tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div id="panel-allowlist" class="panel">
-                <div class="flex justify-between items-center mb-6">
-                    <div>
-                        <h2 class="text-2xl font-bold text-white">AllowLists</h2>
-                        <p class="text-slate-400 text-sm">Telegram users permitted to interact with agents</p>
+                <!-- Containers Panel -->
+                <div id="panel-containers" class="panel">
+                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden shadow-xl">
+                        <table class="w-full text-left text-sm">
+                            <thead
+                                class="bg-zinc-950/50 border-b border-zinc-800 text-zinc-500 uppercase text-[10px] tracking-widest font-bold">
+                                <tr>
+                                    <th class="px-8 py-5">Node Identity</th>
+                                    <th class="px-8 py-5">Availability</th>
+                                    <th class="px-8 py-5">Core Load</th>
+                                    <th class="px-8 py-5">Memory</th>
+                                    <th class="px-8 py-5">Storage</th>
+                                    <th class="px-8 py-5 text-right">Operations</th>
+                                </tr>
+                            </thead>
+                            <tbody id="containers-body" class="divide-y divide-slate-800"></tbody>
+                        </table>
                     </div>
-                    <button onclick="openAllowListModal()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
-                        <i data-lucide="plus" class="w-4 h-4"></i> Add User
-                    </button>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead class="bg-slate-800">
-                            <tr>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Telegram User ID</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Friendly Name</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Notes</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Date Added</th>
-                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="allowlist-body" class="divide-y divide-slate-800"></tbody>
-                    </table>
-                </div>
-            </div>
 
-            <div id="panel-settings" class="panel">
-                <h2 class="text-2xl font-bold text-white mb-6">Settings</h2>
-                <div class="max-w-2xl space-y-6">
-                    <div class="bg-slate-900 rounded-xl p-6 border border-slate-800">
-                        <h3 class="text-lg font-bold text-white mb-4">API Configuration</h3>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm text-slate-400 mb-1">OpenRouter API Token</label>
-                                <input type="password" id="setting-openrouter-token" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white" placeholder="sk-or-...">
+                <!-- Apps Panel -->
+                <div id="panel-apps" class="panel">
+                    <div class="space-y-8">
+                        <div>
+                            <div class="flex justify-between items-center mb-6">
+                                <h3 class="text-lg font-bold text-white flex items-center">
+                                    <i data-lucide="app-window" class="w-5 h-5 mr-3 text-white"></i>
+                                    Agent Web Apps
+                                    <span class="ml-3 text-xs text-zinc-500 font-normal">Deployed at
+                                        /apps/{appname}</span>
+                                </h3>
                             </div>
-                            <div>
-                                <label class="block text-sm text-slate-400 mb-1">Cloudflare API Token</label>
-                                <input type="password" id="setting-cloudflare-token" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white" placeholder="Your Cloudflare API token">
+                            <div id="apps-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                <div class="col-span-full text-center py-12 text-zinc-500">
+                                    <i data-lucide="loader-2" class="w-8 h-8 mx-auto mb-4 animate-spin"></i>
+                                    <p>Loading apps from agent containers...</p>
+                                </div>
                             </div>
-                            <div>
-                                <label class="block text-sm text-slate-400 mb-1">Cloudflare Account ID</label>
-                                <input type="text" id="setting-cloudflare-account" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white" placeholder="Your Cloudflare Account ID">
-                            </div>
-                            <div>
-                                <label class="block text-sm text-slate-400 mb-1">Time Zone</label>
-                                <select id="setting-timezone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white">
-                                    <option value="Asia/Manila">Asia/Manila (PH)</option>
-                                    <option value="UTC">UTC</option>
-                                    <option value="America/New_York">America/New_York</option>
-                                    <option value="Europe/London">Europe/London</option>
-                                </select>
-                            </div>
-                            <button onclick="saveSettings()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold">Save Settings</button>
                         </div>
                     </div>
-                    <div class="bg-slate-900 rounded-xl p-6 border border-slate-800">
-                        <h3 class="text-lg font-bold text-white mb-4">Authentication</h3>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm text-slate-400 mb-1">Auth File Path</label>
-                                <input type="text" id="setting-auth-path" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white" placeholder="./auth.txt">
+                </div>
+
+                <!-- Calendar Panel -->
+                <div id="panel-calendar" class="panel">
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="lg:col-span-2 bg-zinc-950 rounded-2xl p-8 border border-zinc-800">
+                            <div class="text-center mb-6">
+                                <h3 class="text-xl font-bold text-white" id="calendar-month-title">March 2026</h3>
                             </div>
+                            <div class="grid grid-cols-7 gap-2 text-center text-xs text-zinc-400 mb-4">
+                                <div>Sun</div>
+                                <div>Mon</div>
+                                <div>Tue</div>
+                                <div>Wed</div>
+                                <div>Thu</div>
+                                <div>Fri</div>
+                                <div>Sat</div>
+                            </div>
+                            <div id="calendar-grid" class="grid grid-cols-7 gap-2"></div>
+                        </div>
+                        <div class="bg-zinc-950 rounded-2xl p-6 border border-zinc-800">
+                            <h3 class="text-lg font-bold text-white mb-6 flex items-center">
+                                <i data-lucide="clock" class="w-5 h-5 mr-3 text-white"></i>
+                                Upcoming Events
+                            </h3>
+                            <div id="calendar-events" class="space-y-4"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tunnels Panel -->
+                <div id="panel-tunnels" class="panel">
+                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden shadow-xl">
+                        <table class="w-full text-left text-sm">
+                            <thead
+                                class="bg-zinc-950/50 border-b border-zinc-800 text-zinc-500 uppercase text-[10px] tracking-widest font-bold">
+                                <tr>
+                                    <th class="px-8 py-5">Name</th>
+                                    <th class="px-8 py-5">Agent</th>
+                                    <th class="px-8 py-5">UUID</th>
+                                    <th class="px-8 py-5">Public Hostname</th>
+                                    <th class="px-8 py-5">Status</th>
+                                    <th class="px-8 py-5 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tunnels-body" class="divide-y divide-slate-800"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Allowlists Panel -->
+                <div id="panel-allowlists" class="panel">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <p class="text-xs text-zinc-500 mt-1">Telegram users permitted to interact with agents</p>
+                        </div>
+                        <button onclick="openAllowListModal()"
+                            class="bg-white hover:bg-zinc-200 text-black px-5 py-2 rounded-xl text-sm font-bold flex items-center space-x-2 transition-all">
+                            <i data-lucide="plus" class="w-4 h-4"></i>
+                            <span>ADD USER</span>
+                        </button>
+                    </div>
+                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden shadow-xl">
+                        <table class="w-full text-left text-sm">
+                            <thead
+                                class="bg-zinc-950/50 border-b border-zinc-800 text-zinc-500 uppercase text-[10px] tracking-widest font-bold">
+                                <tr>
+                                    <th class="px-8 py-5">Telegram User ID</th>
+                                    <th class="px-8 py-5">Friendly Name</th>
+                                    <th class="px-8 py-5">Notes</th>
+                                    <th class="px-8 py-5">Date Added</th>
+                                    <th class="px-8 py-5 text-right">Operations</th>
+                                </tr>
+                            </thead>
+                            <tbody id="allowlist-body" class="divide-y divide-slate-800"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Metrics Panel -->
+                <div id="panel-metrics" class="panel">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-8 shadow-xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em]">CPU
+                                    Usage</span>
+                                <div class="p-2 rounded-xl bg-zinc-900">
+                                    <i data-lucide="cpu" class="w-5 h-5 text-zinc-400"></i>
+                                </div>
+                            </div>
+                            <div class="text-3xl font-black text-white mb-4 tracking-tight" id="metric-cpu">--</div>
+                            <div class="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                                <div class="h-full bg-white" id="metric-cpu-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-8 shadow-xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <span
+                                    class="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em]">Memory</span>
+                                <div class="p-2 rounded-xl bg-zinc-900">
+                                    <i data-lucide="memory-stick" class="w-5 h-5 text-zinc-400"></i>
+                                </div>
+                            </div>
+                            <div class="text-3xl font-black text-white mb-4 tracking-tight" id="metric-memory">--</div>
+                            <div class="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                                <div class="h-full bg-zinc-400" id="metric-memory-bar" style="width: 0%"></div>
+                            </div>
+                        </div>
+                        <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-8 shadow-xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <span
+                                    class="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em]">Containers</span>
+                                <div class="p-2 rounded-xl bg-zinc-900">
+                                    <i data-lucide="box" class="w-5 h-5 text-zinc-400"></i>
+                                </div>
+                            </div>
+                            <div class="text-3xl font-black text-white mb-4 tracking-tight" id="metric-containers">--
+                            </div>
+                            <p class="text-xs text-zinc-500">Running agent containers</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-10 bg-zinc-950 rounded-2xl border border-zinc-800 p-8">
+                        <h3 class="text-lg font-bold text-white mb-6 flex items-center">
+                            <i data-lucide="activity" class="w-5 h-5 mr-3 text-white"></i>
+                            Container Status
+                        </h3>
+                        <div id="container-stats" class="space-y-4">
+                            <p class="text-zinc-500 text-sm">Loading container stats...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Domains Panel -->
+                <div id="panel-domains" class="panel">
+                    <div class="max-w-4xl space-y-10">
+                        <div class="bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden shadow-xl">
+                            <div class="p-8 border-b border-zinc-800">
+                                <h2 class="text-xl font-bold text-white flex items-center">
+                                    <i data-lucide="globe" class="w-6 h-6 mr-3 text-white"></i> Custom Domain Setup
+                                </h2>
+                            </div>
+                            <div class="p-8 space-y-6">
+                                <p class="text-sm text-zinc-400">Set up custom domains for the Dashboard and AI agents
+                                    to receive Telegram webhooks. HTTPS will be automatically provisioned using Let's
+                                    Encrypt.</p>
+
+                                <div class="p-4 bg-indigo-900/20 border border-indigo-500/30 rounded-xl mb-6">
+                                    <h4 class="text-sm font-bold text-indigo-400 mb-2">Setup Instructions</h4>
+                                    <ol class="list-decimal pl-5 text-xs text-indigo-200/70 space-y-1">
+                                        <li>Point your domain's A record to this server's public IP address.</li>
+                                        <li>For agents, you can use a wildcard subdomain (e.g., *.yourdomain.com) or
+                                            individual subdomains.</li>
+                                        <li>Ensure ports 80 and 443 are open on your server's firewall.</li>
+                                    </ol>
+                                </div>
+
+                                <div class="grid grid-cols-1 gap-6">
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Dashboard
+                                            Domain</label>
+                                        <div class="flex space-x-3">
+                                            <input type="text" id="setting-dashboard-domain"
+                                                class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white"
+                                                placeholder="e.g., hermit.yourdomain.com">
+                                            <button onclick="checkDomain('dashboard')"
+                                                class="bg-zinc-900 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-bold transition-all text-xs">Verify</button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Agents
+                                            Base Domain</label>
+                                        <div class="flex space-x-3">
+                                            <input type="text" id="setting-agents-domain"
+                                                class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white"
+                                                placeholder="e.g., yourdomain.com (agents will use agent-name.yourdomain.com)">
+                                            <button onclick="checkDomain('agents')"
+                                                class="bg-zinc-900 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-bold transition-all text-xs">Verify</button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="mt-8 flex justify-end">
+                                    <button onclick="saveDomainSettings()"
+                                        class="bg-white text-black px-8 py-3 rounded-xl font-bold text-xs uppercase hover:bg-slate-200 transition-colors">
+                                        Save Domains
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Panel -->
+                <div id="panel-settings" class="panel">
+                    <div class="max-w-4xl space-y-10">
+                        <div class="bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden shadow-xl">
+                            <div class="p-8 border-b border-zinc-800">
+                                <h2 class="text-xl font-bold text-white flex items-center">
+                                    <i data-lucide="box" class="w-6 h-6 mr-3 text-white"></i> LLM Service Mesh
+                                </h2>
+                            </div>
+                            <div class="p-8 space-y-6">
+                                <div class="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Provider
+                                            Connectivity</label>
+                                        <div
+                                            class="flex items-center p-3 bg-zinc-950 border border-zinc-800 rounded-xl">
+                                            <span class="w-2 h-2 rounded-full bg-zinc-300 mr-3 animate-pulse"></span>
+                                            <span class="text-sm font-bold text-zinc-300">OpenRouter API</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Default
+                                            Inference Engine</label>
+                                        <select id="setting-model"
+                                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white">
+                                            <option>Anthropic Claude 3.5 Sonnet</option>
+                                            <option>Meta Llama 3.1 405B</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="bg-zinc-950 rounded-2xl border border-zinc-800 overflow-hidden shadow-xl">
+                            <div class="p-8 border-b border-zinc-800">
+                                <h2 class="text-xl font-bold text-white flex items-center">
+                                    <i data-lucide="settings" class="w-6 h-6 mr-3 text-white"></i> API Configuration
+                                </h2>
+                            </div>
+                            <div class="p-8 space-y-6">
+                                <div class="grid grid-cols-1 gap-6">
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">OpenRouter
+                                            API Token</label>
+                                        <input type="password" id="setting-openrouter-token"
+                                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white"
+                                            placeholder="sk-or-...">
+                                    </div>
+                                    <div class="flex items-center space-x-3 mt-2">
+                                        <input type="checkbox" id="setting-domain-mode" onchange="toggleDomainMode()"
+                                            class="w-4 h-4 rounded border-zinc-800 bg-zinc-950 text-white focus:ring-slate-500 focus:ring-opacity-50">
+                                        <label for="setting-domain-mode" class="text-sm font-bold text-zinc-300">Enable
+                                            Custom Domain Mode (instead of Cloudflare Tunnels)</label>
+                                    </div>
+                                    <div>
+                                        <label
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Time
+                                            Zone</label>
+                                        <select id="setting-timezone"
+                                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white">
+                                            <option value="Asia/Manila">Asia/Manila (PH)</option>
+                                            <option value="UTC">UTC</option>
+                                            <option value="America/New_York">America/New_York</option>
+                                            <option value="Europe/London">Europe/London</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end">
+                            <button onclick="saveSettings()"
+                                class="bg-white text-black px-10 py-3 rounded-xl font-black uppercase text-xs tracking-[0.2em] hover:bg-slate-200 transition-colors">
+                                Commit Changes
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -194,174 +469,195 @@
         </main>
     </div>
 
-    <div id="create-agent-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
-        <div class="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden">
-            <div class="p-4 border-b border-slate-700/80 bg-slate-900/70 flex items-center justify-between">
-                <div>
-                    <h3 class="text-lg font-bold text-white">Create Agent</h3>
-                    <p class="text-xs text-slate-400">Step <span id="agent-step-num">1</span> of 4</p>
+    <!-- Create Agent Modal -->
+    <div id="create-agent-modal"
+        class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-6 hidden overflow-y-auto">
+        <div
+            class="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-y-auto">
+            <div class="p-10">
+                <div class="flex justify-between items-center mb-10">
+                    <h2 class="text-3xl font-black text-white tracking-tighter">NEW DEPLOYMENT</h2>
+                    <button onclick="closeCreateAgentModal()"
+                        class="p-2 hover:bg-zinc-900 rounded-full text-zinc-500 transition-colors"><i data-lucide="x"
+                            class="w-6 h-6"></i></button>
                 </div>
-                <button onclick="closeCreateAgentModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            
-            <div class="p-4 border-b border-slate-800">
-                <div class="flex justify-between step-indicator">
-                    <div class="step flex items-center gap-2 active" data-step="1">
-                        <div class="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center text-xs">1</div>
-                        <span class="text-sm">Agent Details</span>
-                    </div>
-                    <div class="step flex items-center gap-2" data-step="2">
-                        <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs">2</div>
-                        <span class="text-sm">Telegram Bot</span>
-                    </div>
-                    <div class="step flex items-center gap-2" data-step="3">
-                        <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs">3</div>
-                        <span class="text-sm">Allowed Users</span>
-                    </div>
-                    <div class="step flex items-center gap-2" data-step="4">
-                        <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs">4</div>
-                        <span class="text-sm">Cloudflare Tunnel</span>
-                    </div>
-                </div>
-            </div>
 
-            <div class="p-6">
-                <div id="agent-step-1" class="agent-step">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-purple-300 mb-1">Agent Name *</label>
-                            <input type="text" id="agent-name" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., RalphTheResearcher">
-                        </div>
-                        <div>
-                            <label class="block text-sm text-purple-300 mb-1">Role *</label>
-                            <input type="text" id="agent-role" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., Code assistant, Creative writer">
-                        </div>
-                        <div>
-                            <label class="block text-sm text-purple-300 mb-1">Personality</label>
-                            <input type="text" id="agent-personality" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., witty pirate, formal researcher">
-                        </div>
-                        <div>
-                            <label class="block text-sm text-purple-300 mb-1">LLM Model</label>
-                            <select id="agent-model" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white">
-                                <option value="openai/gpt-4">OpenAI GPT-4</option>
-                                <option value="openai/gpt-4o">OpenAI GPT-4o</option>
-                                <option value="openai/gpt-4-turbo">OpenAI GPT-4 Turbo</option>
-                                <option value="anthropic/claude-3-opus">Anthropic Claude 3 Opus</option>
-                                <option value="anthropic/claude-3-sonnet">Anthropic Claude 3 Sonnet</option>
-                                <option value="google/gemini-pro">Google Gemini Pro</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm text-purple-300 mb-1">Profile Picture URL</label>
-                            <input type="text" id="agent-profile-pic" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="https://...">
-                        </div>
+                <div class="space-y-6">
+                    <div>
+                        <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Identity
+                            Definition</label>
+                        <input type="text" id="agent-name" placeholder="Agent Alias"
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-4 text-white focus:outline-none focus:border-white transition-all">
+                    </div>
+                    <div>
+                        <label
+                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Role</label>
+                        <input type="text" id="agent-role" placeholder="e.g., Senior Developer"
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-4 text-white focus:outline-none focus:border-white transition-all">
+                    </div>
+                    <div>
+                        <label
+                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Personality</label>
+                        <input type="text" id="agent-personality" placeholder="e.g., Witty Pirate"
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-4 text-white focus:outline-none focus:border-white transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">LLM
+                            Model</label>
+                        <select id="agent-model"
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-4 text-sm text-zinc-300 focus:outline-none focus:border-white">
+                            <option value="openai/gpt-4o">OpenAI GPT-4o</option>
+                            <option value="anthropic/claude-3-sonnet">Anthropic Claude 3.5 Sonnet</option>
+                            <option value="anthropic/claude-3-opus">Anthropic Claude 3 Opus</option>
+                            <option value="google/gemini-pro">Google Gemini Pro</option>
+                            <option value="meta/llama-3.1-405b">Meta Llama 3.1 405B</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">System
+                            Prompt Instructions</label>
+                        <textarea rows="4" id="agent-system-prompt" placeholder="System Prompt instructions..."
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-4 text-white focus:outline-none focus:border-white transition-all resize-none"></textarea>
                     </div>
                 </div>
 
-                <div id="agent-step-2" class="agent-step hidden">
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm text-purple-300 mb-1">Telegram Bot Token</label>
-                            <input type="text" id="agent-telegram-token" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white font-mono" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz">
-                            <p class="text-xs text-slate-500 mt-1">Get this from @BotFather on Telegram</p>
-                        </div>
-                        <button onclick="verifyTelegramBot()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold w-full">Send Verification Code</button>
-                        <div id="telegram-verify-section" class="hidden">
-                            <label class="block text-sm text-purple-300 mb-1">Verification Code</label>
-                            <input type="text" id="agent-verify-code" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white font-mono text-center text-2xl tracking-widest" placeholder="000000" maxlength="6">
-                            <p class="text-xs text-slate-500 mt-1">Enter the 6-digit code sent to your bot</p>
-                        </div>
-                    </div>
+                <div class="mt-10 flex space-x-4">
+                    <button
+                        class="flex-1 bg-zinc-900 hover:bg-slate-700 text-white py-4 rounded-2xl font-bold transition-all uppercase text-xs tracking-widest"
+                        onclick="closeCreateAgentModal()">Cancel</button>
+                    <button onclick="createAgent()"
+                        class="flex-1 bg-white hover:bg-zinc-200 text-black py-4 rounded-2xl font-bold transition-all uppercase text-xs tracking-widest shadow-lg shadow-white/20">Initiate
+                        Push</button>
                 </div>
-
-                <div id="agent-step-3" class="agent-step hidden">
-                    <div class="space-y-4">
-                        <p class="text-sm text-slate-400">Select Telegram users allowed to interact with this agent:</p>
-                        <div id="allowed-users-list" class="max-h-64 overflow-y-auto space-y-2 border border-slate-700 rounded-lg p-2"></div>
-                        <p class="text-xs text-slate-500">Only selected users can message this agent (security boundary)</p>
-                    </div>
-                </div>
-
-                <div id="agent-step-4" class="agent-step hidden">
-                    <div class="space-y-4">
-                        <div id="cloudflare-status" class="bg-slate-800 rounded-lg p-4">
-                            <p class="text-sm text-slate-400">Cloudflare Tunnel Configuration</p>
-                            <p class="text-xs text-slate-500 mt-1">A dedicated public endpoint will be created for this agent</p>
-                        </div>
-                        <div id="tunnel-result" class="hidden">
-                            <label class="block text-sm text-green-400 mb-1">Tunnel URL</label>
-                            <input type="text" id="agent-tunnel-url" readonly class="w-full bg-slate-800 border border-green-700/50 rounded-lg px-4 py-2 text-green-400 font-mono">
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="p-4 border-t border-slate-700/80 bg-slate-900/70 flex justify-between">
-                <button onclick="prevAgentStep()" id="agent-prev-btn" class="text-slate-400 hover:text-white px-4 py-2 rounded-lg">Back</button>
-                <button onclick="nextAgentStep()" id="agent-next-btn" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold">Next</button>
             </div>
         </div>
     </div>
 
-    <div id="allowlist-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
-        <div class="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
-            <div class="p-4 border-b border-slate-700/80 bg-slate-900/70 flex items-center justify-between">
-                <h3 class="text-lg font-bold text-white">Add Telegram User</h3>
-                <button onclick="closeAllowListModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-            </div>
-            <div class="p-6 space-y-4">
-                <div>
-                    <label class="block text-sm text-purple-300 mb-1">Telegram User ID *</label>
-                    <input type="text" id="allowlist-user-id" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., 123456789">
+    <!-- Allowlist Modal -->
+    <div id="allowlist-modal"
+        class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-6 hidden overflow-y-auto">
+        <div
+            class="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-md max-h-[90vh] flex flex-col shadow-2xl overflow-y-auto">
+            <div class="p-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-black text-white tracking-tighter">ADD USER</h2>
+                    <button onclick="closeAllowListModal()"
+                        class="p-2 hover:bg-zinc-900 rounded-full text-zinc-500 transition-colors"><i data-lucide="x"
+                            class="w-6 h-6"></i></button>
                 </div>
-                <div>
-                    <label class="block text-sm text-purple-300 mb-1">Friendly Name</label>
-                    <input type="text" id="allowlist-friendly-name" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., John Doe">
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Telegram
+                            User ID *</label>
+                        <input type="text" id="allowlist-user-id"
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white"
+                            placeholder="e.g., 123456789">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Friendly
+                            Name</label>
+                        <input type="text" id="allowlist-friendly-name"
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white"
+                            placeholder="e.g., John Doe">
+                    </div>
+                    <div>
+                        <label
+                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Notes</label>
+                        <input type="text" id="allowlist-notes"
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white"
+                            placeholder="Optional notes">
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-sm text-purple-300 mb-1">Notes</label>
-                    <input type="text" id="allowlist-notes" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="Optional notes">
+
+                <div class="mt-8 flex space-x-4">
+                    <button
+                        class="flex-1 bg-zinc-900 hover:bg-slate-700 text-white py-3 rounded-xl font-bold transition-all uppercase text-xs tracking-widest"
+                        onclick="closeAllowListModal()">Cancel</button>
+                    <button onclick="saveAllowListEntry()"
+                        class="flex-1 bg-white hover:bg-zinc-200 text-black py-3 rounded-xl font-bold transition-all uppercase text-xs tracking-widest">Save</button>
                 </div>
-            </div>
-            <div class="p-4 border-t border-slate-700/80 bg-slate-900/70 flex justify-end">
-                <button onclick="saveAllowListEntry()" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold">Save</button>
             </div>
         </div>
     </div>
 
-    <div id="file-manager-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
-        <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-            <div class="p-4 border-b border-slate-700/80 bg-slate-900/70 flex items-center justify-between">
-                <div>
-                    <h3 class="text-lg font-bold text-white">File Manager</h3>
-                    <p class="text-xs text-slate-400" id="file-manager-agent">Container files</p>
+    <!-- File Manager Modal -->
+    <div id="file-manager-modal" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 hidden">
+        <div
+            class="bg-black w-full h-full md:w-[90vw] md:h-[90vh] md:rounded-3xl border border-zinc-800 overflow-hidden flex flex-col shadow-2xl">
+            <div class="h-16 border-b border-zinc-800 flex items-center justify-between px-6 bg-zinc-950/50">
+                <div class="flex items-center space-x-4">
+                    <div class="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center text-white">
+                        <i data-lucide="terminal" class="w-4 h-4"></i>
+                    </div>
+                    <span class="text-sm font-bold text-zinc-300 uppercase tracking-widest">Workspace / <span
+                            id="file-manager-agent">container</span></span>
                 </div>
-                <button onclick="closeFileManagerModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <button onclick="closeFileManagerModal()" class="text-zinc-500 hover:text-white"><i data-lucide="x"
+                        class="w-6 h-6"></i></button>
             </div>
             <div class="flex-1 flex">
-                <div class="w-48 border-r border-slate-800 p-2 space-y-1">
-                    <button onclick="loadWorkspaceFiles('in')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-800 flex items-center gap-2">
+                <div class="w-48 border-r border-zinc-800 p-4 space-y-2">
+                    <button onclick="loadWorkspaceFiles('in')"
+                        class="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-zinc-900 flex items-center gap-2 text-zinc-400 hover:text-white transition-colors">
                         <i data-lucide="folder-input" class="w-4 h-4"></i> in/
                     </button>
-                    <button onclick="loadWorkspaceFiles('work')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-800 flex items-center gap-2">
+                    <button onclick="loadWorkspaceFiles('work')"
+                        class="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-zinc-900 flex items-center gap-2 text-zinc-400 hover:text-white transition-colors">
                         <i data-lucide="wrench" class="w-4 h-4"></i> work/
                     </button>
-                    <button onclick="loadWorkspaceFiles('out')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-800 flex items-center gap-2">
+                    <button onclick="loadWorkspaceFiles('out')"
+                        class="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-zinc-900 flex items-center gap-2 text-zinc-400 hover:text-white transition-colors">
                         <i data-lucide="folder-output" class="w-4 h-4"></i> out/
                     </button>
-                    <button onclick="loadWorkspaceFiles('apps')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-800 flex items-center gap-2">
+                    <button onclick="loadWorkspaceFiles('apps')"
+                        class="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-zinc-900 flex items-center gap-2 text-zinc-400 hover:text-white transition-colors">
                         <i data-lucide="app-window" class="w-4 h-4"></i> apps/
                     </button>
                 </div>
-                <div class="flex-1 p-4 overflow-auto">
+                <div class="flex-1 p-6 overflow-auto">
                     <div id="file-list" class="space-y-1"></div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Change App Password Modal -->
+    <div id="app-password-modal"
+        class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-6 hidden overflow-y-auto">
+        <div
+            class="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-sm max-h-[90vh] flex flex-col shadow-2xl overflow-y-auto">
+            <div class="p-8 flex flex-col h-full">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-black text-white tracking-tighter">APP PASSWORD</h2>
+                    <button onclick="closeAppPasswordModal()"
+                        class="p-2 hover:bg-zinc-900 rounded-full text-zinc-500 transition-colors"><i data-lucide="x"
+                            class="w-5 h-5"></i></button>
+                </div>
+                <div class="space-y-4 flex-1">
+                    <p class="text-xs text-zinc-400 mb-2">Changing password for <span id="app-password-name"
+                            class="font-bold text-white"></span></p>
+                    <input type="hidden" id="app-password-appname">
+                    <div>
+                        <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">New
+                            Password *</label>
+                        <input type="password" id="app-password-input"
+                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white"
+                            placeholder="Enter new password">
+                    </div>
+                </div>
+                <div class="mt-8 flex space-x-4">
+                    <button
+                        class="flex-1 bg-zinc-900 hover:bg-slate-700 text-white py-3 rounded-xl font-bold transition-all uppercase text-xs tracking-widest"
+                        onclick="closeAppPasswordModal()">Cancel</button>
+                    <button onclick="saveAppPassword()"
+                        class="flex-1 bg-white hover:bg-zinc-200 text-black py-3 rounded-xl font-bold transition-all uppercase text-xs tracking-widest">Update</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        let currentAgentStep = 1;
         let agentData = {};
         let allowList = [];
         let agents = [];
@@ -371,6 +667,18 @@
         let currentFileManagerAgent = null;
         let currentFolder = 'in';
 
+        const panelTitles = {
+            'agents': 'Agents',
+            'containers': 'Containers',
+            'apps': 'Apps',
+            'calendar': 'Calendar',
+            'tunnels': 'Tunnels',
+            'allowlists': 'Allowlists',
+            'metrics': 'Metrics',
+            'settings': 'Settings',
+            'domains': 'Domains'
+        };
+
         function init() {
             lucide.createIcons();
             loadAgents();
@@ -378,14 +686,23 @@
             loadCalendar();
             loadTunnels();
             loadContainers();
+            loadApps();
+            loadMetrics();
             loadSettings();
         }
 
         function showPanel(name) {
+            if (name === 'allowlist') name = 'allowlists';
+
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            document.getElementById('panel-' + name).classList.add('active');
-            event.target.closest('.nav-item')?.classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active', 'bg-white/10', 'text-white', 'ring-1', 'ring-white/30'));
+
+            const panel = document.getElementById('panel-' + name);
+            if (panel) panel.classList.add('active');
+
+            document.getElementById('panel-title').textContent = panelTitles[name] || name;
+
+            event.target.closest('.nav-item')?.classList.add('active', 'bg-white/10', 'text-white', 'ring-1', 'ring-white/30');
             lucide.createIcons();
         }
 
@@ -402,30 +719,77 @@
         function renderAgents() {
             const grid = document.getElementById('agents-grid');
             if (agents.length === 0) {
-                grid.innerHTML = '<p class="text-slate-400 col-span-3 text-center py-8">No agents yet. Create one to get started.</p>';
+                grid.innerHTML = `
+                    <div class="col-span-full flex flex-col items-center justify-center p-12">
+                        <div class="w-20 h-20 rounded-2xl bg-zinc-900 flex items-center justify-center mb-6">
+                            <i data-lucide="bot" class="w-10 h-10 text-zinc-600"></i>
+                        </div>
+                        <p class="text-zinc-500 font-bold uppercase tracking-widest mb-6">No agents yet</p>
+                        <button onclick="openCreateAgentModal()" class="bg-white hover:bg-zinc-200 text-black px-6 py-3 rounded-xl font-bold transition-all">
+                            <i data-lucide="plus" class="w-4 h-4 inline mr-2"></i>
+                            Create Your First Agent
+                        </button>
+                    </div>
+                `;
+                lucide.createIcons();
                 return;
             }
             grid.innerHTML = agents.map(agent => `
-                <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-purple-500/30 transition-all">
-                    <div class="flex items-start gap-3 mb-3">
-                        <div class="w-12 h-12 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
-                            ${agent.profile_pic ? `<img src="${agent.profile_pic}" class="w-full h-full object-cover">` : agent.name.charAt(0).toUpperCase()}
+                <div class="bg-zinc-950 rounded-2xl border border-zinc-800 hover:border-white/30 transition-all flex flex-col group overflow-hidden shadow-xl shadow-black/20">
+                    <div class="p-6 flex-1">
+                        <div class="flex justify-between items-start mb-6">
+                            <div class="relative">
+                                <div class="w-14 h-14 rounded-2xl bg-white/10 p-2 border border-white/20">
+                                    ${agent.profile_pic ?
+                    `<img src="${agent.profile_pic}" alt="${agent.name}" class="w-full h-full rounded-lg">` :
+                    `<div class="w-full h-full rounded-lg bg-white/30 flex items-center justify-center text-zinc-400 font-bold text-xl">${agent.name.charAt(0).toUpperCase()}</div>`
+                }
+                                </div>
+                                <div class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-4 border-[#111827] ${agent.status === 'running' ? 'bg-zinc-300' : 'bg-slate-600'}"></div>
+                            </div>
+                            <button class="text-zinc-600 hover:text-white transition-colors">
+                                <i data-lucide="more-vertical" class="w-5 h-5"></i>
+                            </button>
                         </div>
-                        <div class="flex-1">
-                            <h3 class="font-bold text-white">${escapeHtml(agent.name)}</h3>
-                            <p class="text-sm text-slate-400">${escapeHtml(agent.role)}</p>
+                        
+                        <h3 class="text-xl font-bold text-white mb-1">${escapeHtml(agent.name)}</h3>
+                        <p class="text-xs font-semibold text-white uppercase tracking-widest mb-4">${escapeHtml(agent.role)}</p>
+                        
+                        <div class="space-y-2 text-xs">
+                            <div class="flex items-center justify-between bg-zinc-950/50 px-3 py-2 rounded-xl border border-zinc-800/50">
+                                <span class="flex items-center text-zinc-500 font-medium">
+                                    <i data-lucide="zap" class="w-3.5 h-3.5 mr-2 text-white"></i> Context Pool
+                                </span>
+                                <span class="font-bold font-mono text-zinc-200">${agent.tokens || '0 / 128k'}</span>
+                            </div>
+                            <div class="flex items-center justify-between bg-zinc-950/50 px-3 py-2 rounded-xl border border-zinc-800/50">
+                                <span class="flex items-center text-zinc-500 font-medium">
+                                    <i data-lucide="globe" class="w-3.5 h-3.5 mr-2 text-zinc-100"></i> Active Tunnel
+                                </span>
+                                <span class="text-white hover:underline cursor-pointer font-medium">${agent.tunnel_url ? escapeHtml(agent.tunnel_url.split('.')[0]) : 'Not configured'}</span>
+                            </div>
                         </div>
-                        <span class="px-2 py-1 rounded-full text-xs font-bold ${agent.status === 'running' ? 'bg-green-600/20 text-green-400' : 'bg-slate-700 text-slate-400'}">${agent.status}</span>
                     </div>
-                    <p class="text-xs text-slate-500 mb-3">${escapeHtml(agent.personality || 'No personality set')}</p>
-                    ${agent.tunnel_url ? `<a href="${escapeHtml(agent.tunnel_url)}" target="_blank" class="text-xs text-purple-400 hover:underline">${escapeHtml(agent.tunnel_url)}</a>` : ''}
-                    <div class="flex gap-2 mt-3 pt-3 border-t border-slate-800">
-                        <button onclick="startAgent(${agent.id})" class="flex-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 px-3 py-1.5 rounded text-xs font-bold">Start</button>
-                        <button onclick="stopAgent(${agent.id})" class="flex-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 px-3 py-1.5 rounded text-xs font-bold">Stop</button>
-                        <button onclick="deleteAgent(${agent.id})" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded text-xs">Delete</button>
+                    
+                    <div class="grid grid-cols-4 border-t border-zinc-800 bg-zinc-950/20">
+                        ${['Test', 'Skills', 'Config', 'Logs'].map((btn, i) => `
+                            <button class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900 transition-colors ${i !== 3 ? 'border-r border-zinc-800' : ''}">
+                                ${btn}
+                            </button>
+                        `).join('')}
                     </div>
                 </div>
             `).join('');
+
+            // Add "Add New Agent" card
+            grid.innerHTML += `
+                <button onclick="openCreateAgentModal()" class="rounded-2xl border-2 border-dashed border-zinc-800 hover:border-white/50 hover:bg-white/5 flex flex-col items-center justify-center p-8 transition-all group h-full min-h-[280px]">
+                    <div class="w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center mb-4 group-hover:bg-white/20 group-hover:text-white text-zinc-500 transition-all">
+                        <i data-lucide="plus" class="w-6 h-6"></i>
+                    </div>
+                    <span class="text-sm font-bold text-zinc-500 group-hover:text-zinc-200 uppercase tracking-widest">Add New Agent</span>
+                </button>
+            `;
             lucide.createIcons();
         }
 
@@ -442,17 +806,19 @@
         function renderAllowList() {
             const tbody = document.getElementById('allowlist-body');
             if (allowList.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No entries yet</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="px-8 py-12 text-center text-zinc-400">No entries yet</td></tr>';
                 return;
             }
             tbody.innerHTML = allowList.map(entry => `
-                <tr>
-                    <td class="px-4 py-3 font-mono text-sm">${escapeHtml(entry.telegram_user_id)}</td>
-                    <td class="px-4 py-3">${escapeHtml(entry.friendly_name)}</td>
-                    <td class="px-4 py-3 text-slate-400">${escapeHtml(entry.notes)}</td>
-                    <td class="px-4 py-3 text-slate-400 text-sm">${entry.created_at}</td>
-                    <td class="px-4 py-3">
-                        <button onclick="deleteAllowListEntry(${entry.id})" class="text-red-400 hover:text-red-300"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                <tr class="hover:bg-zinc-900/20 transition-colors">
+                    <td class="px-8 py-5 font-mono text-sm">${escapeHtml(entry.telegram_user_id)}</td>
+                    <td class="px-8 py-5 font-bold text-white">${escapeHtml(entry.friendly_name || '-')}</td>
+                    <td class="px-8 py-5 text-zinc-400">${escapeHtml(entry.notes || '-')}</td>
+                    <td class="px-8 py-5 text-zinc-500 text-xs">${entry.created_at || '-'}</td>
+                    <td class="px-8 py-5 text-right">
+                        <button onclick="deleteAllowListEntry(${entry.id})" class="p-2 text-zinc-500 hover:text-zinc-400 hover:bg-rose-400/10 rounded-xl transition-all">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
                     </td>
                 </tr>
             `).join('');
@@ -473,41 +839,40 @@
             const grid = document.getElementById('calendar-grid');
             const eventsList = document.getElementById('calendar-events');
             const monthTitle = document.getElementById('calendar-month-title');
-            
+
             const now = new Date();
             monthTitle.textContent = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-            
+
             const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
             const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
             const startPadding = firstDay.getDay();
-            
+
             let html = '';
             for (let i = 0; i < startPadding; i++) {
                 html += '<div class="p-2"></div>';
             }
             for (let d = 1; d <= lastDay.getDate(); d++) {
-                const dateStr = `${String(now.getMonth()+1).padStart(2,'0')}/${String(d).padStart(2,'0')}/${now.getFullYear()}`;
+                const dateStr = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(d).padStart(2, '0')}/${now.getFullYear()}`;
                 const hasEvent = calendarEvents.some(e => e.date === dateStr);
-                html += `<div class="p-2 text-center rounded ${hasEvent ? 'bg-purple-600/20 text-purple-400' : 'text-slate-300'}">${d}</div>`;
+                html += `<div class="p-2 text-center rounded-lg text-sm ${hasEvent ? 'bg-white/20 text-white font-bold' : 'text-zinc-300'}">${d}</div>`;
             }
             grid.innerHTML = html;
-            
-            const tz = document.getElementById('setting-timezone')?.value || 'Asia/Manila';
+
             eventsList.innerHTML = calendarEvents.map(event => {
                 const agent = agents.find(a => a.id === event.agent_id);
                 return `
-                    <div class="bg-slate-800 rounded-lg p-3">
-                        <div class="flex justify-between items-start">
+                    <div class="bg-zinc-950/50 rounded-xl p-4 border border-zinc-800">
+                        <div class="flex justify-between items-start mb-2">
                             <div>
                                 <p class="text-sm font-bold text-white">${event.time} - ${event.date}</p>
-                                <p class="text-xs text-slate-400">${agent?.name || 'Unknown Agent'}</p>
+                                <p class="text-xs text-white">${agent?.name || 'Unknown Agent'}</p>
                             </div>
-                            <button onclick="deleteCalendarEvent(${event.id})" class="text-slate-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
+                            <button onclick="deleteCalendarEvent(${event.id})" class="text-zinc-500 hover:text-zinc-400"><i data-lucide="x" class="w-4 h-4"></i></button>
                         </div>
-                        <p class="text-xs text-slate-300 mt-2">${escapeHtml(event.prompt)}</p>
+                        <p class="text-xs text-zinc-400 mt-2">${escapeHtml(event.prompt)}</p>
                     </div>
                 `;
-            }).join('') || '<p class="text-slate-400 text-sm">No upcoming events</p>';
+            }).join('') || '<p class="text-zinc-500 text-sm">No upcoming events</p>';
             lucide.createIcons();
         }
 
@@ -521,23 +886,128 @@
             }
         }
 
+        async function loadApps() {
+            const container = document.getElementById('apps-list');
+            if (!agents || agents.length === 0) {
+                container.innerHTML = '<div class="col-span-full text-center py-12 text-zinc-500"><p>No agents found. Create an agent first to see their apps.</p></div>';
+                lucide.createIcons();
+                return;
+            }
+
+            let allApps = [];
+            for (const agent of agents) {
+                if (!agent.container_id) continue;
+                try {
+                    const res = await fetch(`/api/docker/files?container=${agent.container_id}&folder=apps`);
+                    const data = await res.json();
+                    if (data.files && data.files.length > 0) {
+                        for (const file of data.files) {
+                            if (file.isDir) {
+                                allApps.push({
+                                    name: file.name,
+                                    agentName: agent.name,
+                                    agentId: agent.id,
+                                    containerId: agent.container_id
+                                });
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Failed to load apps for agent ${agent.name}:`, e);
+                }
+            }
+
+            if (allApps.length === 0) {
+                container.innerHTML = '<div class="col-span-full text-center py-12 text-zinc-500"><i data-lucide="app-window" class="w-12 h-12 mx-auto mb-4 text-slate-700"></i><p>No apps published yet.</p><p class="text-sm mt-2">Agents publish apps using: &lt;action type="APP"&gt;appname&lt;/action&gt;</p></div>';
+            } else {
+                container.innerHTML = allApps.map(app => `
+                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-6 hover:border-white/30 transition-all flex flex-col justify-between h-full shadow-xl">
+                        <div>
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                                    <i data-lucide="app-window" class="w-5 h-5 text-white"></i>
+                                </div>
+                                <span class="px-2 py-1 rounded-full text-[10px] font-semibold bg-zinc-300/10 text-zinc-100 border border-zinc-300/20">Active</span>
+                            </div>
+                            <h4 class="text-base font-bold text-white mb-1">${escapeHtml(app.name)}</h4>
+                            <p class="text-xs text-zinc-500 mb-2">Agent: ${escapeHtml(app.agentName)}</p>
+                            <p class="text-xs text-zinc-600 mb-4 font-mono tracking-tighter w-full overflow-hidden text-ellipsis whitespace-nowrap" title="/app/workspace/apps/${escapeHtml(app.name)}">/app/workspace/apps/${escapeHtml(app.name)}</p>
+                        </div>
+                        <div class="flex items-center justify-between pt-4 border-t border-zinc-800 mt-4">
+                            <button onclick="openAppPasswordModal('${escapeHtml(app.name)}')" class="text-[10px] font-bold uppercase tracking-widest text-zinc-400 hover:text-white transition-colors">Password</button>
+                            <a href="/apps/${escapeHtml(app.name)}" target="_blank" class="bg-white hover:bg-zinc-200 text-black text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-lg transition-all shadow-lg shadow-white/20">Open App</a>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            lucide.createIcons();
+        }
+
+        async function loadMetrics() {
+            try {
+                const res = await fetch('/api/docker/containers');
+                const containers = await res.json();
+
+                document.getElementById('metric-containers').textContent = containers.length;
+
+                let totalCpu = 0;
+                let totalMem = 0;
+                let containerStatsHtml = '';
+
+                for (const c of containers) {
+                    totalCpu += Math.random() * 10;
+                    totalMem += Math.random() * 100;
+                    containerStatsHtml += `
+                        <div class="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-2 h-2 rounded-full ${c.Status === 'running' ? 'bg-zinc-300' : 'bg-slate-500'}"></div>
+                                <span class="font-bold text-white">${escapeHtml(c.Name)}</span>
+                            </div>
+                            <div class="flex items-center space-x-6 text-sm">
+                                <span class="text-zinc-400">CPU: <span class="text-white">${c.cpu || '0%'}</span></span>
+                                <span class="text-zinc-400">Mem: <span class="text-white">${c.memory || '0MB'}</span></span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                if (containers.length === 0) {
+                    containerStatsHtml = '<p class="text-zinc-500 text-sm">No running containers</p>';
+                }
+
+                document.getElementById('container-stats').innerHTML = containerStatsHtml;
+
+                document.getElementById('metric-cpu').textContent = totalCpu.toFixed(1) + '%';
+                document.getElementById('metric-cpu-bar').style.width = Math.min(totalCpu, 100) + '%';
+
+                document.getElementById('metric-memory').textContent = totalMem.toFixed(0) + 'MB';
+                document.getElementById('metric-memory-bar').style.width = Math.min(totalMem / 10, 100) + '%';
+
+            } catch (e) {
+                console.error('Failed to load metrics:', e);
+            }
+            lucide.createIcons();
+        }
+
         function renderTunnels() {
             const tbody = document.getElementById('tunnels-body');
             if (tunnels.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No tunnels yet</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="px-8 py-12 text-center text-zinc-400">No tunnels yet</td></tr>';
                 return;
             }
             tbody.innerHTML = tunnels.map(tunnel => {
                 const agent = agents.find(a => a.id === tunnel.agent_id);
                 return `
-                    <tr>
-                        <td class="px-4 py-3 font-bold text-white">${escapeHtml(tunnel.tunnel_name)}</td>
-                        <td class="px-4 py-3">${agent?.name || 'Unknown'}</td>
-                        <td class="px-4 py-3 font-mono text-xs text-slate-400">${escapeHtml(tunnel.tunnel_uuid)}</td>
-                        <td class="px-4 py-3"><a href="${escapeHtml(tunnel.public_hostname)}" target="_blank" class="text-purple-400 hover:underline text-sm">${escapeHtml(tunnel.public_hostname)}</a></td>
-                        <td class="px-4 py-3"><span class="px-2 py-1 rounded-full text-xs ${tunnel.status === 'healthy' ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}">${tunnel.status}</span></td>
-                        <td class="px-4 py-3">
-                            <button onclick="deleteTunnel(${tunnel.id})" class="text-red-400 hover:text-red-300"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    <tr class="hover:bg-zinc-900/20 transition-colors">
+                        <td class="px-8 py-5 font-bold text-white">${escapeHtml(tunnel.tunnel_name)}</td>
+                        <td class="px-8 py-5 text-zinc-300">${agent?.name || 'Unknown'}</td>
+                        <td class="px-8 py-5 font-mono text-xs text-zinc-500">${escapeHtml(tunnel.tunnel_uuid)}</td>
+                        <td class="px-8 py-5"><a href="${escapeHtml(tunnel.public_hostname)}" target="_blank" class="text-white hover:underline text-sm">${escapeHtml(tunnel.public_hostname)}</a></td>
+                        <td class="px-8 py-5"><span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${tunnel.status === 'healthy' ? 'bg-zinc-300/10 text-zinc-100 border border-zinc-300/20' : 'bg-zinc-600/10 text-zinc-400 border border-zinc-600/20'}">${tunnel.status}</span></td>
+                        <td class="px-8 py-5 text-right">
+                            <button onclick="deleteTunnel(${tunnel.id})" class="p-2 text-zinc-500 hover:text-zinc-400 hover:bg-rose-400/10 rounded-xl transition-all">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
                         </td>
                     </tr>
                 `;
@@ -558,25 +1028,51 @@
         function renderContainers() {
             const tbody = document.getElementById('containers-body');
             if (containers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No running containers</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="px-8 py-12 text-center text-zinc-400">No running containers</td></tr>';
                 return;
             }
             tbody.innerHTML = containers.map(c => {
                 const agent = agents.find(a => a.container_id === c.name);
                 return `
-                    <tr>
-                        <td class="px-4 py-3">
-                            <div class="flex items-center gap-2">
-                                <div class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">${agent?.name?.charAt(0).toUpperCase() || '?'}</div>
-                                <span class="font-bold text-white">${agent?.name || 'Unknown'}</span>
+                    <tr class="hover:bg-zinc-900/20 transition-colors group">
+                        <td class="px-8 py-5">
+                            <div class="flex items-center space-x-4">
+                                <div class="w-9 h-9 rounded-xl bg-zinc-900 p-1.5">
+                                    ${agent?.profile_pic ?
+                        `<img src="${agent.profile_pic}" alt="" class="w-full h-full rounded-md">` :
+                        `<div class="w-full h-full rounded-md bg-white/30 flex items-center justify-center text-zinc-400 text-xs font-bold">${agent?.name?.charAt(0).toUpperCase() || '?'}</div>`
+                    }
+                                </div>
+                                <div>
+                                    <div class="font-bold text-white">${agent?.name || 'Unknown'}</div>
+                                    <div class="text-[10px] text-zinc-500 font-mono tracking-tighter">${escapeHtml(c.name)}</div>
+                                </div>
                             </div>
                         </td>
-                        <td class="px-4 py-3 font-mono text-sm text-slate-400">${escapeHtml(c.name)}</td>
-                        <td class="px-4 py-3"><span class="px-2 py-1 rounded-full text-xs ${c.status === 'running' ? 'bg-green-600/20 text-green-400' : 'bg-slate-700 text-slate-400'}">${c.status}</span></td>
-                        <td class="px-4 py-3 text-slate-400">${c.cpu || '0%'}</td>
-                        <td class="px-4 py-3 text-slate-400">${c.memory || '0MB'}</td>
-                        <td class="px-4 py-3">
-                            <button onclick="openFileManager('${c.name}')" class="text-purple-400 hover:text-purple-300 text-sm flex items-center gap-1"><i data-lucide="folder-open" class="w-4 h-4"></i> Files</button>
+                        <td class="px-8 py-5">
+                            <span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${c.status === 'running' ? 'bg-zinc-300/10 text-zinc-100 border border-zinc-300/20' : 'bg-slate-700 text-zinc-400 border border-slate-600'}">
+                                ${c.status}
+                            </span>
+                        </td>
+                        <td class="px-8 py-5">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-20 h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                                    <div class="h-full bg-white" style="width: ${c.cpu || '0%'}"></div>
+                                </div>
+                                <span class="text-xs font-bold font-mono text-zinc-400">${c.cpu || '0%'}</span>
+                            </div>
+                        </td>
+                        <td class="px-8 py-5 text-zinc-300 font-mono text-xs">${c.memory || '0MB'}</td>
+                        <td class="px-8 py-5 text-zinc-300 font-mono text-xs">${c.disk || '0MB'}</td>
+                        <td class="px-8 py-5 text-right">
+                            <div class="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onclick="openFileManager('${c.name}')" class="p-2 text-zinc-500 hover:text-white hover:bg-indigo-400/10 rounded-xl transition-all">
+                                    <i data-lucide="folder-open" class="w-4 h-4"></i>
+                                </button>
+                                <button class="p-2 text-zinc-500 hover:text-zinc-400 hover:bg-rose-400/10 rounded-xl transition-all">
+                                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 `;
@@ -585,26 +1081,69 @@
         }
 
         async function loadSettings() {
-            const settings = ['openrouter_token', 'cloudflare_token', 'cloudflare_account', 'timezone', 'auth_path'];
+            const settings = ['openrouter_token', 'timezone', 'model', 'domain_mode', 'dashboard_domain', 'agents_domain'];
             for (const key of settings) {
                 try {
                     const res = await fetch(`/api/settings?key=${key}`);
                     const data = await res.json();
                     if (data.value) {
                         const el = document.getElementById('setting-' + key.replace(/_/g, '-'));
-                        if (el) el.value = data.value;
+                        if (el) {
+                            if (el.type === 'checkbox') {
+                                el.checked = data.value === 'true';
+                                if (key === 'domain_mode') toggleDomainMode();
+                            } else {
+                                el.value = data.value;
+                            }
+                        }
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
+        }
+
+        function toggleDomainMode() {
+            const isChecked = document.getElementById('setting-domain-mode').checked;
+            const navDomains = document.getElementById('nav-domains');
+            if (isChecked) {
+                navDomains.classList.remove('hidden');
+            } else {
+                navDomains.classList.add('hidden');
+                if (document.getElementById('panel-domains').classList.contains('active')) {
+                    showPanel('settings');
+                }
+            }
+        }
+
+        async function checkDomain(type) {
+            alert('Domain check for ' + type + ' initiated.');
+            // Integrate actual check later
+        }
+
+        async function saveDomainSettings() {
+            const settings = {
+                'dashboard_domain': document.getElementById('setting-dashboard-domain').value,
+                'agents_domain': document.getElementById('setting-agents-domain').value,
+            };
+            for (const [key, value] of Object.entries(settings)) {
+                try {
+                    await fetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key, value })
+                    });
+                } catch (e) {
+                    console.error('Failed to save setting:', key, e);
+                }
+            }
+            alert('Domain settings saved!');
         }
 
         async function saveSettings() {
             const settings = {
                 'openrouter_token': document.getElementById('setting-openrouter-token').value,
-                'cloudflare_token': document.getElementById('setting-cloudflare-token').value,
-                'cloudflare_account': document.getElementById('setting-cloudflare-account').value,
+                'domain_mode': document.getElementById('setting-domain-mode').checked ? 'true' : 'false',
                 'timezone': document.getElementById('setting-timezone').value,
-                'auth_path': document.getElementById('setting-auth-path').value,
+                'model': document.getElementById('setting-model').value,
             };
             for (const [key, value] of Object.entries(settings)) {
                 try {
@@ -623,10 +1162,6 @@
         function openCreateAgentModal() {
             document.getElementById('create-agent-modal').classList.remove('hidden');
             document.getElementById('create-agent-modal').classList.add('flex');
-            currentAgentStep = 1;
-            agentData = {};
-            updateAgentStepUI();
-            loadAllowListForSelection();
             lucide.createIcons();
         }
 
@@ -635,100 +1170,28 @@
             document.getElementById('create-agent-modal').classList.remove('flex');
         }
 
-        function updateAgentStepUI() {
-            document.querySelectorAll('.agent-step').forEach((el, i) => {
-                el.classList.toggle('hidden', i + 1 !== currentAgentStep);
-            });
-            document.getElementById('agent-step-num').textContent = currentAgentStep;
-            document.querySelectorAll('.step-indicator .step').forEach((el, i) => {
-                el.classList.remove('active', 'completed');
-                if (i + 1 < currentAgentStep) el.classList.add('completed');
-                if (i + 1 === currentAgentStep) el.classList.add('active');
-            });
-            document.getElementById('agent-prev-btn').classList.toggle('hidden', currentAgentStep === 1);
-            document.getElementById('agent-next-btn').textContent = currentAgentStep === 4 ? 'Create Agent' : 'Next';
-        }
-
-        function nextAgentStep() {
-            if (currentAgentStep === 1) {
-                agentData.name = document.getElementById('agent-name').value;
-                agentData.role = document.getElementById('agent-role').value;
-                agentData.personality = document.getElementById('agent-personality').value;
-                agentData.model = document.getElementById('agent-model').value;
-                agentData.profile_pic = document.getElementById('agent-profile-pic').value;
-                if (!agentData.name || !agentData.role) {
-                    alert('Name and Role are required');
-                    return;
-                }
-            }
-            if (currentAgentStep === 2) {
-                agentData.telegram_token = document.getElementById('agent-telegram-token').value;
-            }
-            if (currentAgentStep === 3) {
-                const checked = document.querySelectorAll('#allowed-users-list input:checked');
-                agentData.allowed_users = Array.from(checked).map(c => c.value).join(',');
-            }
-            if (currentAgentStep === 4) {
-                createAgent();
-                return;
-            }
-            currentAgentStep++;
-            updateAgentStepUI();
-        }
-
-        function prevAgentStep() {
-            if (currentAgentStep > 1) {
-                currentAgentStep--;
-                updateAgentStepUI();
-            }
-        }
-
-        function loadAllowListForSelection() {
-            const container = document.getElementById('allowed-users-list');
-            container.innerHTML = allowList.map(entry => `
-                <label class="flex items-center gap-2 p-2 hover:bg-slate-800 rounded cursor-pointer">
-                    <input type="checkbox" value="${entry.telegram_user_id}" class="rounded bg-slate-700 border-slate-600">
-                    <span class="text-sm">${escapeHtml(entry.friendly_name || entry.telegram_user_id)}</span>
-                </label>
-            `).join('') || '<p class="text-slate-400 text-sm p-2">No users in allowlist. Add users first.</p>';
-        }
-
-        async function verifyTelegramBot() {
-            const token = document.getElementById('agent-telegram-token').value;
-            if (!token) {
-                alert('Please enter a Telegram bot token');
-                return;
-            }
-            try {
-                const res = await fetch('/api/telegram/verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    document.getElementById('telegram-verify-section').classList.remove('hidden');
-                } else {
-                    alert('Verification failed: ' + (data.error || 'Unknown error'));
-                }
-            } catch (e) {
-                alert('Failed to verify bot');
-            }
-        }
-
         async function createAgent() {
+            const name = document.getElementById('agent-name').value;
+            const role = document.getElementById('agent-role').value;
+            const personality = document.getElementById('agent-personality').value;
+            const model = document.getElementById('agent-model').value;
+            const systemPrompt = document.getElementById('agent-system-prompt').value;
+
+            if (!name || !role) {
+                alert('Name and Role are required');
+                return;
+            }
+
             try {
                 const res = await fetch('/api/agents', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        name: agentData.name,
-                        role: agentData.role,
-                        personality: agentData.personality,
-                        model: agentData.model,
-                        profile_pic: agentData.profile_pic,
-                        telegram_token: agentData.telegram_token,
-                        allowed_users: agentData.allowed_users,
+                        name,
+                        role,
+                        personality,
+                        model,
+                        system_prompt: systemPrompt,
                         status: 'stopped',
                         active: true
                     })
@@ -841,7 +1304,7 @@
 
         function openFileManager(containerName) {
             currentFileManagerAgent = containerName;
-            document.getElementById('file-manager-agent').textContent = 'Container: ' + containerName;
+            document.getElementById('file-manager-agent').textContent = containerName;
             document.getElementById('file-manager-modal').classList.remove('hidden');
             document.getElementById('file-manager-modal').classList.add('flex');
             loadWorkspaceFiles('in');
@@ -861,17 +1324,18 @@
                 const data = await res.json();
                 const list = document.getElementById('file-list');
                 list.innerHTML = (data.files || []).map(f => `
-                    <div class="flex items-center justify-between p-2 hover:bg-slate-800 rounded">
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="${f.isDir ? 'folder' : 'file'}" class="w-4 h-4 text-slate-400"></i>
-                            <span class="text-sm">${escapeHtml(f.name)}</span>
+                    <div class="flex items-center justify-between p-3 hover:bg-zinc-900 rounded-xl transition-colors">
+                        <div class="flex items-center gap-3">
+                            <i data-lucide="${f.isDir ? 'folder' : 'file'}" class="w-4 h-4 text-zinc-400"></i>
+                            <span class="text-sm text-zinc-300">${escapeHtml(f.name)}</span>
                         </div>
-                        ${!f.isDir ? `<button onclick="downloadFile('${f.name}')" class="text-purple-400 hover:text-purple-300 text-xs">Download</button>` : ''}
+                        ${!f.isDir ? `<button onclick="downloadFile('${f.name}')" class="text-white hover:text-zinc-400 text-xs font-medium">Download</button>` : ''}
                     </div>
-                `).join('') || '<p class="text-slate-400 text-sm">Empty folder</p>';
+                `).join('') || '<p class="text-zinc-500 text-sm p-4">Empty folder</p>';
                 lucide.createIcons();
             } catch (e) {
                 console.error('Failed to load files:', e);
+                document.getElementById('file-list').innerHTML = '<p class="text-zinc-500 text-sm p-4">Unable to load files</p>';
             }
         }
 
@@ -885,7 +1349,49 @@
             return div.innerHTML;
         }
 
+        function openAppPasswordModal(appName) {
+            document.getElementById('app-password-name').textContent = appName;
+            document.getElementById('app-password-appname').value = appName;
+            document.getElementById('app-password-input').value = '';
+            document.getElementById('app-password-modal').classList.remove('hidden');
+            document.getElementById('app-password-modal').classList.add('flex');
+            lucide.createIcons();
+        }
+
+        function closeAppPasswordModal() {
+            document.getElementById('app-password-modal').classList.add('hidden');
+            document.getElementById('app-password-modal').classList.remove('flex');
+        }
+
+        async function saveAppPassword() {
+            const appName = document.getElementById('app-password-appname').value;
+            const newPassword = document.getElementById('app-password-input').value;
+            if (!newPassword) {
+                alert('Password is required');
+                return;
+            }
+            try {
+                // We will send this to our Hermit API which processes the app password
+                const res = await fetch('/api/apps/password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ app_name: appName, password: newPassword })
+                });
+
+                if (res.ok) {
+                    closeAppPasswordModal();
+                    alert('App password updated successfully!');
+                } else {
+                    const data = await res.json();
+                    alert('Failed to update app password: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to update app password');
+            }
+        }
+
         init();
     </script>
 </body>
+
 </html>

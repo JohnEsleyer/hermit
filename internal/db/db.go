@@ -1,7 +1,9 @@
 package db
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -132,10 +134,20 @@ func (d *DB) migrate() error {
 		tunnel_uuid TEXT NOT NULL UNIQUE,
 		tunnel_name TEXT NOT NULL,
 		public_hostname TEXT NOT NULL DEFAULT '',
-		status TEXT NOT NULL DEFAULT 'disconnected',
+		status TEXT NOT NULL DEFAULT 'stopped',
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		last_seen TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'admin',
+		must_change_password INTEGER NOT NULL DEFAULT 1,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	`
 
@@ -228,6 +240,75 @@ func (d *DB) GetSetting(key string) (string, error) {
 		return "", nil
 	}
 	return value, err
+}
+
+func (d *DB) InitDefaultUser() error {
+	var count int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	hash := hashPassword("hermit123")
+	_, err = d.db.Exec(`
+		INSERT INTO users (username, password_hash, role, must_change_password)
+		VALUES (?, ?, 'admin', 1)
+	`, "admin", hash)
+	return err
+}
+
+func (d *DB) VerifyUser(username, password string) (int64, bool, error) {
+	var id int64
+	var hash string
+	var mustChange int
+	err := d.db.QueryRow("SELECT id, password_hash, must_change_password FROM users WHERE username = ?", username).Scan(&id, &hash, &mustChange)
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	if hash != hashPassword(password) {
+		return 0, false, nil
+	}
+	return id, mustChange == 1, nil
+}
+
+func (d *DB) ChangePassword(username, newPassword string) error {
+	hash := hashPassword(newPassword)
+	_, err := d.db.Exec(`
+		UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = datetime('now')
+		WHERE username = ?
+	`, hash, username)
+	return err
+}
+
+func hashPassword(password string) string {
+	hash := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(hash[:])
+}
+
+func (d *DB) GetUserByID(id int64) (string, bool, error) {
+	var username string
+	var mustChange int
+	var err error
+
+	if id == 0 {
+		err = fmt.Errorf("invalid id")
+	} else {
+		err = d.db.QueryRow("SELECT username, must_change_password FROM users WHERE id = ?", id).Scan(&username, &mustChange)
+	}
+
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return username, mustChange == 1, nil
 }
 
 func (d *DB) LogAction(agentID int64, userID, action, details string) error {

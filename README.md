@@ -139,10 +139,17 @@ Server starts on port 3000:
 |----------|---------|-------------|
 | PORT | 3000 | Server port |
 | DATABASE_PATH | ./data/hermit.db | SQLite database path |
-| WORKSPACE_PATH | ./workspace | Workspace directory |
 | LLM_API_KEY | - | LLM API key |
 | LLM_MODEL | openai/gpt-4 | LLM model |
 | TELEGRAM_BOT_TOKEN | - | Telegram bot token |
+
+## Authentication
+
+Default credentials:
+- Username: `admin`
+- Password: `hermit123`
+
+**First login requires changing password.**
 
 ## API Endpoints
 

@@ -1,16 +1,14 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 
 	"github.com/hermit/core/internal/api"
+	"github.com/hermit/core/internal/cloudflare"
 	"github.com/hermit/core/internal/db"
 	"github.com/hermit/core/internal/docker"
 	"github.com/hermit/core/internal/llm"
@@ -55,9 +53,25 @@ func main() {
 	dockerClient := docker.NewClient()
 	log.Printf("Docker client initialized")
 
-	go startTunnel(port)
+	tunnelManager := cloudflare.NewTunnelManager()
 
-	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient)
+	portInt := 3000
+	fmt.Sscanf(port, "%d", &portInt)
+	domainMode, _ := database.GetSetting("domain_mode")
+
+	if domainMode != "true" {
+		go func() {
+			log.Printf("Starting cloudflared tunnel for dashboard...")
+			url, err := tunnelManager.StartQuickTunnel("dashboard", portInt)
+			if err != nil {
+				log.Printf("Failed to start dashboard tunnel: %v", err)
+			} else {
+				log.Printf("==> Dashboard Public URL: %s", url)
+			}
+		}()
+	}
+
+	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
 
 	fs := http.FileServer(http.Dir("./dashboard/public"))
 	http.Handle("/dashboard/", http.StripPrefix("/dashboard/", fs))
@@ -100,35 +114,4 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-}
-
-func startTunnel(port string) {
-	log.Printf("Starting cloudflared tunnel...")
-
-	cmd := exec.Command("cloudflared", "tunnel", "--url", fmt.Sprintf("http://localhost:%s", port))
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		log.Printf("Failed to get stderr pipe: %v", err)
-		return
-	}
-	cmd.Stdout = os.Stdout
-
-	if err := cmd.Start(); err != nil {
-		log.Printf("Failed to start tunnel: %v", err)
-		return
-	}
-
-	urlRe := regexp.MustCompile(`https?://[a-zA-Z0-9-]+\.trycloudflare\.com`)
-	go func() {
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			fmt.Println(line)
-			if match := urlRe.FindString(line); match != "" {
-				log.Printf("==> Public URL: %s", match)
-			}
-		}
-	}()
-
-	cmd.Wait()
 }
