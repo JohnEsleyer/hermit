@@ -98,15 +98,15 @@ export function HealthTab() {
   const showSkeleton = loading || metrics.host.timestamp === 0;
 
   const progress = (percent: number) => {
-    const safePercent = clampPercent(percent);
+    const safePercent = showSkeleton ? 0 : clampPercent(percent);
     const styles = getLevelStyles(safePercent);
 
     return (
       <div className="mt-4">
         <div className="w-full h-2 rounded-full bg-zinc-800 overflow-hidden">
-          <div className={`h-full ${styles.bar}`} style={{ width: `${safePercent}%` }} />
+          <div className={`h-full ${showSkeleton ? 'bg-zinc-700' : styles.bar}`} style={{ width: `${safePercent}%` }} />
         </div>
-        <div className="mt-2 text-[11px] text-zinc-500">{safePercent.toFixed(1)}%</div>
+        <div className="mt-2 text-[11px] text-zinc-500">{showSkeleton ? '0.0%' : `${safePercent.toFixed(1)}%`}</div>
       </div>
     );
   };
@@ -114,10 +114,10 @@ export function HealthTab() {
   const metricCard = (title: string, icon: JSX.Element, percent: number, body: JSX.Element) => {
     const styles = getLevelStyles(percent);
     return (
-      <div className={`rounded-3xl p-5 border border-zinc-800 ${styles.ring} ${styles.bg}`}>
+      <div className={`rounded-3xl p-5 border border-zinc-800 ${showSkeleton ? '' : `${styles.ring} ${styles.bg}`}`}>
         <div className="flex items-center justify-between">
           <span className="text-zinc-300 text-sm lowercase flex items-center gap-2">{icon} {title}</span>
-          <span className={`text-xs font-semibold ${styles.tone}`}>{clampPercent(percent).toFixed(0)}%</span>
+          <span className={`text-xs font-semibold ${showSkeleton ? 'text-zinc-500' : styles.tone}`}>{showSkeleton ? '...' : `${clampPercent(percent).toFixed(0)}%`}</span>
         </div>
         <div className="mt-4">{body}</div>
         {progress(percent)}

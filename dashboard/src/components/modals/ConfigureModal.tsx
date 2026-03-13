@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Settings2, UploadCloud, X } from 'lucide-react';
 import { Agent } from '../../types';
 
@@ -18,7 +18,19 @@ export function ConfigureModal({ agent, onClose, triggerToast }: ConfigureModalP
     provider: agent.provider || 'openrouter',
     profilePic: agent.profilePic || '',
     bannerUrl: agent.bannerUrl || '',
+    model: agent.model || '',
+    allowedUsers: agent.allowedUsers || '',
+    telegramId: agent.telegramId || '',
+    telegramToken: agent.telegramToken || '',
   });
+  const [allowlist, setAllowlist] = useState<{ friendlyName: string, telegramUserId: string }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/allowlist`)
+      .then(res => res.json())
+      .then(data => setAllowlist(data || []))
+      .catch(err => console.error('Failed to fetch allowlist:', err));
+  }, []);
 
   const uploadImage = async (file: File, type: 'profile' | 'banner') => {
     const body = new FormData();
@@ -84,6 +96,34 @@ export function ConfigureModal({ agent, onClose, triggerToast }: ConfigureModalP
               <option value="anthropic">Anthropic</option>
               <option value="gemini">Gemini</option>
             </select>
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-2 ml-4">Model (e.g. gemini-3-flash-preview)</label>
+            <input type="text" value={formData.model} onChange={e => setFormData({ ...formData, model: e.target.value })} placeholder="Enter specific model name" className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors" />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-2 ml-4">Primary User (from Allowlist)</label>
+            <select
+              value={formData.telegramId}
+              onChange={e => {
+                const selected = allowlist.find(a => a.telegramUserId === e.target.value);
+                if (selected) {
+                  setFormData({ ...formData, telegramId: e.target.value, allowedUsers: selected.friendlyName });
+                } else {
+                  setFormData({ ...formData, telegramId: e.target.value });
+                }
+              }}
+              className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors appearance-none"
+            >
+              <option value="">Select a user</option>
+              {allowlist.map(item => (
+                <option key={item.telegramUserId} value={item.telegramUserId}>{item.friendlyName} ({item.telegramUserId})</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-2 ml-4">Telegram Bot Token</label>
+            <input type="text" value={formData.telegramToken} onChange={e => setFormData({ ...formData, telegramToken: e.target.value })} placeholder="Enter new bot token" className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors" />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

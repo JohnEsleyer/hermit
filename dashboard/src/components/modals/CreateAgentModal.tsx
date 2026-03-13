@@ -18,7 +18,17 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
     provider: 'openrouter',
     profilePic: '',
     bannerUrl: '',
+    model: '',
+    allowedUsers: '',
   });
+  const [allowlist, setAllowlist] = useState<{ friendlyName: string, telegramUserId: string }[]>([]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/allowlist`)
+      .then(res => res.json())
+      .then(data => setAllowlist(data || []))
+      .catch(err => console.error('Failed to fetch allowlist:', err));
+  }, []);
   const [telegramData, setTelegramData] = useState({
     botToken: '',
     allowedUserId: '',
@@ -130,6 +140,8 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
           bannerUrl: formData.bannerUrl,
           telegramToken: telegramData.botToken,
           telegramId: telegramData.allowedUserId,
+          model: formData.model,
+          allowedUsers: formData.allowedUsers,
           status: 'running',
         }),
       });
@@ -204,14 +216,33 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
               <div className="mt-6 pt-6 border-t border-zinc-800">
                 <div className="space-y-4">
                   <div>
+                    <label className="block text-sm text-zinc-400 mb-2 ml-4">Model (e.g. gemini-3-flash-preview)</label>
+                    <input type="text" value={formData.model} onChange={e => setFormData({ ...formData, model: e.target.value })} placeholder="Enter specific model name" className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors" />
+                  </div>
+                  <div>
                     <label className="block text-sm text-zinc-400 mb-2 ml-4">Telegram Bot Token</label>
                     <input type="text" value={telegramData.botToken} onChange={e => setTelegramData({ ...telegramData, botToken: e.target.value })} placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors" />
                   </div>
                   <div>
-                    <label className="block text-sm text-zinc-400 mb-2 ml-4">Allowlist User ID</label>
-                    <input type="text" value={telegramData.allowedUserId} onChange={e => setTelegramData({ ...telegramData, allowedUserId: e.target.value })} placeholder="Your Telegram User ID" className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors" />
+                    <label className="block text-sm text-zinc-400 mb-2 ml-4">Primary User (from Allowlist)</label>
+                    <select
+                      value={telegramData.allowedUserId}
+                      onChange={e => {
+                        const selected = allowlist.find(a => a.telegramUserId === e.target.value);
+                        setTelegramData({ ...telegramData, allowedUserId: e.target.value });
+                        if (selected) {
+                          setFormData({ ...formData, allowedUsers: selected.friendlyName });
+                        }
+                      }}
+                      className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors appearance-none"
+                    >
+                      <option value="">Select a user</option>
+                      {allowlist.map(item => (
+                        <option key={item.telegramUserId} value={item.telegramUserId}>{item.friendlyName} ({item.telegramUserId})</option>
+                      ))}
+                    </select>
                   </div>
-                  <p className="text-xs text-zinc-500 ml-4">A 6-digit code will be sent to verify the bot.</p>
+                  <p className="text-xs text-zinc-500 ml-4">A 6-digit code will be sent to verify the bot and associate it with the selected primary user.</p>
                 </div>
               </div>
             </div>
@@ -240,6 +271,6 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
           )}
         </div>
       </div>
-    </div>
+    </div >
   );
 }

@@ -301,7 +301,10 @@ func (s *Server) HandleListAgents(c *fiber.Ctx) error {
 		ProfilePic   string `json:"profilePic"`
 		BannerURL    string `json:"bannerUrl"`
 		ContainerID  string `json:"containerId"`
-		AllowedUsers string `json:"allowedUsers"`
+		AllowedUsers  string `json:"allowedUsers"`
+		Model         string `json:"model"`
+		TelegramID    string `json:"telegramId"`
+		TelegramToken string `json:"telegramToken"`
 	}
 
 	var result []AgentResponse
@@ -323,6 +326,9 @@ func (s *Server) HandleListAgents(c *fiber.Ctx) error {
 			BannerURL:    a.BannerURL,
 			ContainerID:  a.ContainerID,
 			AllowedUsers: a.AllowedUsers,
+			Model:        a.Model,
+			TelegramID:    a.TelegramID,
+			TelegramToken: a.TelegramToken,
 		})
 	}
 
@@ -340,6 +346,8 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 		TelegramToken string `json:"telegramToken"`
 		TelegramID    string `json:"telegramId"`
 		Status        string `json:"status"`
+		Model         string `json:"model"`
+		AllowedUsers  string `json:"allowedUsers"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
@@ -363,6 +371,8 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	if a.Provider == "" {
 		a.Provider = "openrouter"
 	}
+	a.Model = req.Model
+	a.AllowedUsers = req.AllowedUsers
 
 	id, err := s.db.CreateAgent(&a)
 	if err != nil {
@@ -399,8 +409,12 @@ func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 		Role        string `json:"role"`
 		Personality string `json:"personality"`
 		Provider    string `json:"provider"`
-		ProfilePic  string `json:"profilePic"`
-		BannerURL   string `json:"bannerUrl"`
+		ProfilePic   string `json:"profilePic"`
+		BannerURL    string `json:"bannerUrl"`
+		Model         string `json:"model"`
+		AllowedUsers  string `json:"allowedUsers"`
+		TelegramID    string `json:"telegramId"`
+		TelegramToken string `json:"telegramToken"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
@@ -418,6 +432,14 @@ func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 	}
 	existing.ProfilePic = req.ProfilePic
 	existing.BannerURL = req.BannerURL
+	existing.Model = req.Model
+	existing.AllowedUsers = req.AllowedUsers
+	if req.TelegramID != "" {
+		existing.TelegramID = req.TelegramID
+	}
+	if req.TelegramToken != "" {
+		existing.TelegramToken = req.TelegramToken
+	}
 
 	if err := s.db.UpdateAgent(existing); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -783,16 +805,32 @@ func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 		s.db.SetSetting("domain", req.Domain)
 	}
 	if req.OpenrouterKey != "" {
-		s.db.SetSetting("openrouter_api_key", req.OpenrouterKey)
+		val := req.OpenrouterKey
+		if val == "REMOVE" {
+			val = ""
+		}
+		s.db.SetSetting("openrouter_api_key", val)
 	}
 	if req.OpenaiKey != "" {
-		s.db.SetSetting("openai_api_key", req.OpenaiKey)
+		val := req.OpenaiKey
+		if val == "REMOVE" {
+			val = ""
+		}
+		s.db.SetSetting("openai_api_key", val)
 	}
 	if req.AnthropicKey != "" {
-		s.db.SetSetting("anthropic_api_key", req.AnthropicKey)
+		val := req.AnthropicKey
+		if val == "REMOVE" {
+			val = ""
+		}
+		s.db.SetSetting("anthropic_api_key", val)
 	}
 	if req.GeminiKey != "" {
-		s.db.SetSetting("gemini_api_key", req.GeminiKey)
+		val := req.GeminiKey
+		if val == "REMOVE" {
+			val = ""
+		}
+		s.db.SetSetting("gemini_api_key", val)
 	}
 	if req.Timezone != "" {
 		s.db.SetSetting("timezone", req.Timezone)

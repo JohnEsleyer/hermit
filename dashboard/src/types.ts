@@ -10,6 +10,9 @@ export interface Agent {
   bannerUrl?: string;
   containerId?: string;
   allowedUsers?: string;
+  model?: string;
+  telegramId?: string;
+  telegramToken?: string;
 }
 
 export interface ToastMessage {
