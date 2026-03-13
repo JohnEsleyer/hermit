@@ -641,12 +641,22 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 	timezone, _ := s.db.GetSetting("timezone")
 
 	tunnelURL := s.tunnels.GetURL("dashboard")
+	isHealthy := s.tunnels.CheckTunnelHealth("dashboard", 2*time.Second)
+
+	if domainMode != "true" && tunnelURL == "" {
+		port, _ := strconv.Atoi(os.Getenv("PORT"))
+		if port == 0 {
+			port = 3000
+		}
+		go s.tunnels.StartQuickTunnel("dashboard", port)
+	}
 
 	return c.JSON(fiber.Map{
 		"domainMode":    domainMode == "true",
 		"domain":        domain,
 		"tunnelURL":     tunnelURL,
-		"tunnelHealthy": s.tunnels.CheckTunnelHealth("dashboard", 5*time.Second),
+		"tunnelHealthy": isHealthy,
+		"status":        s.getTunnelStatus(domainMode == "true", isHealthy),
 		"openrouterKey": openrouterKey != "",
 		"openaiKey":     openaiKey != "",
 		"anthropicKey":  anthropicKey != "",
@@ -654,6 +664,16 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 		"timezone":      timezone,
 		"hasLLMKey":     openrouterKey != "" || openaiKey != "" || anthropicKey != "" || geminiKey != "",
 	})
+}
+
+func (s *Server) getTunnelStatus(domainMode, healthy bool) string {
+	if domainMode {
+		return "Domain Mode Active"
+	}
+	if healthy {
+		return "Active (Quick Tunnel)"
+	}
+	return "Provisioning..."
 }
 
 func (s *Server) HandleSetSettings(c *fiber.Ctx) error {

@@ -124,9 +124,10 @@ func main() {
 			url, err := tunnelManager.StartQuickTunnel("dashboard", portInt)
 			if err != nil {
 				log.Printf("Failed to start dashboard tunnel: %v", err)
-			} else {
-				log.Printf("==> Dashboard Public URL: %s", url)
+				return
 			}
+			log.Printf("==> Dashboard Public URL: %s", url)
+			updateAgentWebhooks(database, tunnelManager, url)
 		}()
 	}
 
@@ -137,6 +138,25 @@ func main() {
 
 	if err := apiServer.Listen(port); err != nil {
 		log.Fatal(err)
+	}
+}
+
+func updateAgentWebhooks(database *db.DB, tm *cloudflare.TunnelManager, baseURL string) {
+	agents, err := database.ListAgents()
+	if err != nil {
+		log.Printf("Failed to list agents: %v", err)
+		return
+	}
+	for _, a := range agents {
+		if a.TelegramToken != "" {
+			tempBot := telegram.NewBot(a.TelegramToken)
+			webhookURL := fmt.Sprintf("%s/api/webhook/%d", baseURL, a.ID)
+			if err := tempBot.SetWebhook(webhookURL); err != nil {
+				log.Printf("Failed to set webhook for agent %d: %v", a.ID, err)
+			} else {
+				log.Printf("Updated webhook for agent %d: %s", a.ID, webhookURL)
+			}
+		}
 	}
 }
 
