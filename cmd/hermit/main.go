@@ -132,10 +132,18 @@ func main() {
 					return
 				}
 				log.Printf("==> Dashboard Public URL: %s", url)
-				updateAgentWebhooks(database, tunnelManager, url)
+				
+				// Initial webhook update with retries
+				go func() {
+					for i := 0; i < 10; i++ {
+						updateAgentWebhooks(database, tunnelManager, url)
+						time.Sleep(10 * time.Second)
+					}
+				}()
 			}()
 
 			go tunnelHealthMonitor(tunnelManager, portInt)
+			go webhookHealthMonitor(database, tunnelManager)
 		}
 	}
 
@@ -159,11 +167,30 @@ func updateAgentWebhooks(database *db.DB, tm *cloudflare.TunnelManager, baseURL 
 		if a.TelegramToken != "" {
 			tempBot := telegram.NewBot(a.TelegramToken)
 			webhookURL := fmt.Sprintf("%s/api/webhook/%d", baseURL, a.ID)
+
+			// Check if already set
+			info, err := tempBot.GetWebhookInfo()
+			if err == nil && info.URL == webhookURL {
+				continue
+			}
+
 			if err := tempBot.SetWebhook(webhookURL); err != nil {
 				log.Printf("Failed to set webhook for agent %d: %v", a.ID, err)
 			} else {
 				log.Printf("Updated webhook for agent %d: %s", a.ID, webhookURL)
 			}
+		}
+	}
+}
+
+func webhookHealthMonitor(database *db.DB, tm *cloudflare.TunnelManager) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		url := tm.GetURL("dashboard")
+		if url != "" {
+			updateAgentWebhooks(database, tm, url)
 		}
 	}
 }

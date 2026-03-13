@@ -54,6 +54,15 @@ type AuditLog struct {
 	CreatedAt string
 }
 
+type HistoryEntry struct {
+	ID        int64  `json:"id"`
+	AgentID   int64  `json:"agent_id"`
+	UserID    string `json:"user_id"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
+}
+
 func NewDB(path string) (*DB, error) {
 	connStr := fmt.Sprintf("file:%s?_busy_timeout=5000&_journal_mode=WAL", path)
 	db, err := sql.Open("sqlite3", connStr)
@@ -386,16 +395,6 @@ func (d *DB) GetAuditLogs(agentID int64, limit int) ([]*AuditLog, error) {
 	}
 	return logs, nil
 }
-
-type HistoryEntry struct {
-	ID        int64
-	AgentID   int64
-	UserID    string
-	Role      string
-	Content   string
-	CreatedAt string
-}
-
 func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
 	_, err := d.db.Exec(`
 		INSERT INTO history (agent_id, user_id, role, content)
@@ -407,7 +406,7 @@ func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
 func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 	rows, err := d.db.Query(`
 		SELECT id, agent_id, user_id, role, content, created_at
-		FROM history WHERE agent_id = ? ORDER BY id ASC LIMIT ?
+		FROM history WHERE agent_id = ? ORDER BY id DESC LIMIT ?
 	`, agentID, limit)
 	if err != nil {
 		return nil, err

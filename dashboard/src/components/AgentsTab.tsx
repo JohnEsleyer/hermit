@@ -23,7 +23,7 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
     return (
       <div className="flex-1 min-h-0 flex flex-col items-center justify-center text-zinc-500">
         <div className="w-24 h-24 rounded-full border-2 border-dashed border-zinc-800 flex items-center justify-center mb-6">
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-50"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
         </div>
         <p className="text-lg font-medium">No agents deployed yet.</p>
         <p className="text-sm">Click "deploy new agent" to get started.</p>
@@ -66,7 +66,7 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
                 <button onClick={() => openModal('testConsole', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">chat / test</button>
                 <button onClick={() => openModal('skills', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">skills</button>
                 <button onClick={() => openModal('configure', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">configure</button>
-                <button onClick={() => openModal('logs', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">terminal logs</button>
+                <button onClick={() => openModal('logs', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">chat history</button>
                 <button onClick={() => handleDelete(agent)} className="col-span-2 bg-red-950/30 hover:bg-red-900/50 text-red-400 rounded-full py-3.5 text-xs font-bold transition-all">delete agent</button>
               </div>
             </div>

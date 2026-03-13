@@ -513,8 +513,8 @@ func (s *Server) HandleAgentAction(c *fiber.Ctx) error {
 
 func (s *Server) HandleGetAgentLogs(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	logs, _ := s.db.GetAuditLogs(id, 100)
-	return c.JSON(logs)
+	history, _ := s.db.GetHistory(id, 100)
+	return c.JSON(history)
 }
 
 func (s *Server) HandleListSkills(c *fiber.Ctx) error {
@@ -971,7 +971,11 @@ func (s *Server) HandleWebhook(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
-	_ = c.Params("agentId")
+	agentId, _ := strconv.ParseInt(c.Params("agentId"), 10, 64)
+	agent, err := s.db.GetAgent(agentId)
+	if err != nil || agent == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
+	}
 
 	var update telegram.Update
 	if err := c.BodyParser(&update); err != nil {
@@ -984,21 +988,123 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 
 	chatID := fmt.Sprintf("%d", update.Message.Chat.ID)
 	userText := strings.TrimSpace(update.Message.Text)
+	userID := fmt.Sprintf("%d", update.Message.From.ID)
+
+	// Authorization check
+	allowed := false
+	if agent.AllowedUsers == "" {
+		allowed = true
+	} else {
+		allowedUsers := strings.Split(agent.AllowedUsers, ",")
+		for _, u := range allowedUsers {
+			if strings.TrimSpace(u) == userID || strings.TrimSpace(u) == update.Message.From.Username {
+				allowed = true
+				break
+			}
+		}
+	}
+
+	if !allowed {
+		tempBot := telegram.NewBot(agent.TelegramToken)
+		tempBot.SendMessage(chatID, "You are not authorized to use this agent.")
+		return c.SendStatus(200)
+	}
+
+	// Log user message
+	s.db.AddHistory(agentId, userID, "user", userText)
 
 	s.mu.RLock()
 	takeoverOn := s.takeoverMode[chatID]
 	s.mu.RUnlock()
 
 	if takeoverOn {
-		s.handleTakeoverInput(chatID, userText)
+		tempBot := telegram.NewBot(agent.TelegramToken)
+		s.handleTakeoverInput(agentId, chatID, userText, tempBot)
 	} else {
-		if s.bot != nil {
-			s.bot.SendMessage(chatID, "Message received. AI agent will respond shortly...")
-		}
+		go s.processAgentAIRequest(agent, chatID, userID, userText)
 	}
 
 	return c.SendStatus(200)
 }
+
+func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText string) {
+	tempBot := telegram.NewBot(agent.TelegramToken)
+
+	// Fetch history for context
+	history, _ := s.db.GetHistory(agent.ID, 10)
+	var messages []llm.Message
+	
+	// System prompt
+	messages = append(messages, llm.Message{Role: "system", Content: agent.Personality})
+
+	// Add history (reversed because GetHistory returns DESC)
+	for i := len(history) - 1; i >= 0; i-- {
+		h := history[i]
+		role := h.Role
+		if role == "system" {
+			role = "user" // Simple mapping for now
+		}
+		messages = append(messages, llm.Message{Role: role, Content: h.Content})
+	}
+
+	// Get LLM Client
+	client := s.getLLMClientForAgent(agent)
+	if client == nil {
+		tempBot.SendMessage(chatID, "Error: LLM client not configured for this agent.")
+		s.db.AddHistory(agent.ID, "system", "system", "Error: LLM client not configured")
+		return
+	}
+
+	// Chat
+	response, err := client.Chat(agent.Model, messages)
+	if err != nil {
+		tempBot.SendMessage(chatID, "Error communicating with AI: "+err.Error())
+		s.db.AddHistory(agent.ID, "system", "system", "LLM Error: "+err.Error())
+		return
+	}
+
+	// Log agent response
+	s.db.AddHistory(agent.ID, "assistant", "assistant", response)
+	
+	// Send to Telegram
+	tempBot.SendMessage(chatID, response)
+}
+
+func (s *Server) getLLMClientForAgent(agent *db.Agent) *llm.Client {
+	provider := agent.Provider
+	if provider == "" {
+		provider = "openrouter"
+	}
+
+	var apiKey string
+	var baseURL string
+	switch provider {
+	case "openai":
+		apiKey, _ = s.db.GetSetting("openai_api_key")
+		baseURL = "https://api.openai.com/v1"
+	case "anthropic":
+		apiKey, _ = s.db.GetSetting("anthropic_api_key")
+		baseURL = "https://api.anthropic.com/v1"
+	case "gemini":
+		apiKey, _ = s.db.GetSetting("gemini_api_key")
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+	default:
+		apiKey, _ = s.db.GetSetting("openrouter_api_key")
+		baseURL = "https://openrouter.ai/api/v1"
+	}
+
+	if apiKey == "" {
+		return nil
+	}
+
+	return llm.NewClient(
+		llm.WithProvider(llm.Provider(provider)),
+		llm.WithBaseURL(baseURL),
+		llm.WithAPIKey(apiKey),
+		llm.WithModel(agent.Model),
+	)
+}
+
 
 func (s *Server) handleTelegramCommand(chatID, text string) {
 	if s.bot == nil {
@@ -1082,27 +1188,40 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 		s.mu.RUnlock()
 
 		if takeoverOn {
-			s.handleTakeoverInput(chatID, text)
+			s.handleTakeoverInput(0, chatID, text, s.bot)
 		} else {
 			s.bot.SendMessage(chatID, "Message received. AI agent will respond shortly...")
 		}
 	}
 }
 
-func (s *Server) handleTakeoverInput(chatID, xmlInput string) {
+func (s *Server) handleTakeoverInput(agentID int64, chatID, xmlInput string, bot *telegram.Bot) {
 	parsed := parser.ParseLLMOutput(xmlInput)
 	var responses []string
 
+	if agentID > 0 {
+		s.db.AddHistory(agentID, "system", "system", "Takeover command: "+xmlInput)
+	}
+
 	for _, cmd := range parsed.Terminals {
-		out, err := s.docker.Exec("hermit-test", cmd)
+		// Use agent-specific container if available
+		containerName := "hermit-test"
+		if agentID > 0 {
+			agent, _ := s.db.GetAgent(agentID)
+			if agent != nil && agent.ContainerID != "" {
+				containerName = agent.ContainerID
+			}
+		}
+
+		out, err := s.docker.Exec(containerName, cmd)
 		status := "SUCCESS"
 		if err != nil {
 			status = "FAILED"
 			out = err.Error()
 		}
 		displayOut := out
-		if len(out) > 200 {
-			displayOut = out[:200] + "..."
+		if len(out) > 500 {
+			displayOut = out[:500] + "..."
 		}
 		responses = append(responses, fmt.Sprintf("Terminal: %s\nStatus: %s\nOutput: %s", cmd, status, displayOut))
 	}
@@ -1132,7 +1251,14 @@ func (s *Server) handleTakeoverInput(chatID, xmlInput string) {
 		responses = append(responses, "No actions parsed from input.")
 	}
 
-	if s.bot != nil {
-		s.bot.SendMessage(chatID, strings.Join(responses, "\n\n"))
+	respStr := strings.Join(responses, "\n\n")
+	if agentID > 0 {
+		s.db.AddHistory(agentID, "system", "system", respStr)
+	}
+
+	if bot != nil {
+		bot.SendMessage(chatID, respStr)
+	} else if s.bot != nil {
+		s.bot.SendMessage(chatID, respStr)
 	}
 }
