@@ -133,7 +133,7 @@ func main() {
 	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
 
 	log.Printf("Hermit (Go Fiber) starting on :%s ...", port)
-	log.Printf("Dashboard available at: http://localhost:%s/dashboard/", port)
+	log.Printf("Dashboard available at: http://localhost:%s/", port)
 	log.Printf("Optimized for 1GB VPS. Memory footprint < 15MB.")
 
 	if err := apiServer.Listen(port); err != nil {

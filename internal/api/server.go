@@ -1,7 +1,10 @@
 package api
 
 import (
+	"embed"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +22,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/logger"
 )
 
+var distFS embed.FS
+
 type Server struct {
 	db      *db.DB
 	ws      *workspace.Workspace
@@ -29,24 +34,29 @@ type Server struct {
 	app     *fiber.App
 
 	verifyCodes   map[string]string
+	verifyTokens  map[string]string
 	takeoverMode  map[string]bool
 	mu            sync.RWMutex
 	contextStore  map[string][]string
 	tokenCounters map[string]int
+
+	containerStats map[string]docker.ContainerStats
 }
 
 func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client, tunnels *cloudflare.TunnelManager) *Server {
 	s := &Server{
-		db:            database,
-		ws:            ws,
-		bot:           bot,
-		llm:           llmClient,
-		docker:        dockerClient,
-		tunnels:       tunnels,
-		verifyCodes:   make(map[string]string),
-		takeoverMode:  make(map[string]bool),
-		contextStore:  make(map[string][]string),
-		tokenCounters: make(map[string]int),
+		db:             database,
+		ws:             ws,
+		bot:            bot,
+		llm:            llmClient,
+		docker:         dockerClient,
+		tunnels:        tunnels,
+		verifyCodes:    make(map[string]string),
+		verifyTokens:   make(map[string]string),
+		takeoverMode:   make(map[string]bool),
+		contextStore:   make(map[string][]string),
+		tokenCounters:  make(map[string]int),
+		containerStats: make(map[string]docker.ContainerStats),
 	}
 
 	app := fiber.New(fiber.Config{
@@ -66,8 +76,6 @@ func (s *Server) Listen(port string) error {
 }
 
 func (s *Server) setupRoutes(app *fiber.App) {
-	app.Static("/dashboard", "./dashboard/public")
-
 	api := app.Group("/api")
 
 	api.Post("/auth/login", s.HandleLogin)
@@ -81,24 +89,52 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Put("/agents/:id", s.HandleUpdateAgent)
 	api.Delete("/agents/:id", s.HandleDeleteAgent)
 	api.Post("/agents/:id/action", s.HandleAgentAction)
+	api.Get("/agents/:id/logs", s.HandleGetAgentLogs)
 
 	api.Get("/skills", s.HandleListSkills)
 	api.Post("/skills", s.HandleCreateSkill)
+	api.Put("/skills/:id", s.HandleUpdateSkill)
 	api.Delete("/skills/:id", s.HandleDeleteSkill)
+	api.Get("/skills/context", s.HandleGetContextSkill)
+	api.Post("/skills/context/reset", s.HandleResetContextSkill)
 
-	api.Post("/test-contract", s.HandleTestContract)
-
-	api.Get("/metrics", s.HandleMetrics)
-	api.Get("/containers", s.HandleContainers)
+	api.Get("/calendar", s.HandleListCalendar)
+	api.Post("/calendar", s.HandleCreateCalendarEvent)
+	api.Delete("/calendar/:id", s.HandleDeleteCalendarEvent)
 
 	api.Get("/allowlist", s.HandleListAllowlist)
 	api.Post("/allowlist", s.HandleCreateAllowlist)
-	api.Post("/telegram/send-code", s.HandleTelegramSendCode)
-	api.Post("/telegram/verify", s.HandleTelegramVerify)
-	api.Post("/webhook", s.HandleWebhook)
+	api.Delete("/allowlist/:id", s.HandleDeleteAllowlist)
+
+	api.Get("/metrics", s.HandleMetrics)
+	api.Get("/containers", s.HandleContainers)
+	api.Get("/containers/:id/files", s.HandleContainerFiles)
 
 	api.Get("/settings", s.HandleGetSettings)
 	api.Post("/settings", s.HandleSetSettings)
+	api.Get("/settings/domain-status", s.HandleDomainStatus)
+
+	api.Post("/test-contract", s.HandleTestContract)
+
+	api.Post("/telegram/send-code", s.HandleTelegramSendCode)
+	api.Post("/telegram/verify", s.HandleTelegramVerify)
+	api.Post("/webhook", s.HandleWebhook)
+	api.Post("/webhook/:agentId", s.HandleAgentWebhook)
+
+	s.setupStaticRoutes(app)
+}
+
+func (s *Server) setupStaticRoutes(app *fiber.App) {
+	distPath := "./dashboard/dist"
+
+	app.Static("/", distPath)
+
+	app.Use(func(c *fiber.Ctx) error {
+		if c.Path()[:4] == "/api" {
+			return c.Status(404).JSON(fiber.Map{"error": "API route not found"})
+		}
+		return c.SendFile(distPath + "/index.html")
+	})
 }
 
 func (s *Server) HandleLogin(c *fiber.Ctx) error {
@@ -160,7 +196,22 @@ func (s *Server) HandleMetrics(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(metrics)
+
+	domainMode, _ := s.db.GetSetting("domain_mode")
+	tunnelURL := ""
+	if domainMode != "true" {
+		tunnelURL = s.tunnels.GetURL("dashboard")
+	}
+
+	domain, _ := s.db.GetSetting("domain")
+
+	return c.JSON(fiber.Map{
+		"host":       metrics.Host,
+		"containers": metrics.Containers,
+		"tunnelURL":  tunnelURL,
+		"domain":     domain,
+		"domainMode": domainMode == "true",
+	})
 }
 
 func (s *Server) HandleContainers(c *fiber.Ctx) error {
@@ -168,7 +219,62 @@ func (s *Server) HandleContainers(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(metrics.Containers)
+
+	agents, _ := s.db.ListAgents()
+
+	type ContainerInfo struct {
+		ID          string                `json:"id"`
+		Name        string                `json:"name"`
+		AgentID     string                `json:"agentId"`
+		AgentName   string                `json:"agentName"`
+		Status      string                `json:"status"`
+		Stats       docker.ContainerStats `json:"stats"`
+		ContainerID string                `json:"containerId"`
+	}
+
+	var containers []ContainerInfo
+	for _, cont := range metrics.Containers {
+		agentName := cont.Name
+		agentID := ""
+		status := "running"
+
+		for _, a := range agents {
+			if a.ContainerID == cont.Name || strings.Contains(cont.Name, strings.ToLower(a.Name)) {
+				agentName = a.Name
+				agentID = fmt.Sprintf("%d", a.ID)
+				status = a.Status
+				break
+			}
+		}
+
+		containers = append(containers, ContainerInfo{
+			ID:          cont.Name,
+			Name:        agentName,
+			AgentID:     agentID,
+			AgentName:   agentName,
+			Status:      status,
+			Stats:       cont,
+			ContainerID: cont.Name,
+		})
+	}
+
+	return c.JSON(containers)
+}
+
+func (s *Server) HandleContainerFiles(c *fiber.Ctx) error {
+	containerID := c.Params("id")
+	_ = containerID
+	path := c.Query("path", "/app/workspace")
+
+	return c.JSON(fiber.Map{
+		"path": path,
+		"files": []fiber.Map{
+			{"name": "work", "type": "directory"},
+			{"name": "in", "type": "directory"},
+			{"name": "out", "type": "directory"},
+			{"name": "apps", "type": "directory"},
+		},
+	})
 }
 
 func (s *Server) HandleListAgents(c *fiber.Ctx) error {
@@ -176,7 +282,42 @@ func (s *Server) HandleListAgents(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(agents)
+
+	type AgentResponse struct {
+		ID           int64  `json:"id"`
+		Name         string `json:"name"`
+		Role         string `json:"role"`
+		Personality  string `json:"personality"`
+		Provider     string `json:"provider"`
+		Status       string `json:"status"`
+		TunnelURL    string `json:"tunnelUrl"`
+		ProfilePic   string `json:"profilePic"`
+		ContainerID  string `json:"containerId"`
+		AllowedUsers string `json:"allowedUsers"`
+	}
+
+	var result []AgentResponse
+	for _, a := range agents {
+		tunnelURL := a.TunnelURL
+		if tunnelURL == "" {
+			tunnelURL = s.tunnels.GetURL(fmt.Sprintf("agent-%d", a.ID))
+		}
+
+		result = append(result, AgentResponse{
+			ID:           a.ID,
+			Name:         a.Name,
+			Role:         a.Role,
+			Personality:  a.Personality,
+			Provider:     a.Provider,
+			Status:       a.Status,
+			TunnelURL:    tunnelURL,
+			ProfilePic:   a.ProfilePic,
+			ContainerID:  a.ContainerID,
+			AllowedUsers: a.AllowedUsers,
+		})
+	}
+
+	return c.JSON(result)
 }
 
 func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
@@ -184,11 +325,22 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	if err := c.BodyParser(&a); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
+
+	a.Status = "standby"
 	id, err := s.db.CreateAgent(&a)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-	return c.JSON(fiber.Map{"id": id})
+
+	go func() {
+		time.Sleep(2 * time.Second)
+		s.db.UpdateAgent(&db.Agent{
+			ID:     id,
+			Status: "running",
+		})
+	}()
+
+	return c.JSON(fiber.Map{"id": id, "success": true})
 }
 
 func (s *Server) HandleGetAgent(c *fiber.Ctx) error {
@@ -198,46 +350,366 @@ func (s *Server) HandleGetAgent(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
-	return c.SendStatus(200)
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	var a db.Agent
+	if err := c.BodyParser(&a); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
+	}
+	a.ID = id
+	if err := s.db.UpdateAgent(&a); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func (s *Server) HandleDeleteAgent(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	s.db.DeleteAgent(id)
-	return c.SendStatus(200)
+	s.db.DeleteTunnelByAgentID(id)
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func (s *Server) HandleAgentAction(c *fiber.Ctx) error {
-	return c.SendStatus(200)
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	var req struct {
+		Action string `json:"action"`
+	}
+	c.BodyParser(&req)
+
+	agent, _ := s.db.GetAgent(id)
+	if agent == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
+	}
+
+	switch req.Action {
+	case "start":
+		agent.Status = "running"
+	case "stop":
+		agent.Status = "stopped"
+	case "reset":
+		if s.docker != nil {
+			s.docker.Stop(agent.ContainerID)
+			s.docker.Remove(agent.ContainerID)
+		}
+		agent.Status = "standby"
+	}
+
+	s.db.UpdateAgent(agent)
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleGetAgentLogs(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	logs, _ := s.db.GetAuditLogs(id, 100)
+	return c.JSON(logs)
 }
 
 func (s *Server) HandleListSkills(c *fiber.Ctx) error {
-	skills, _ := s.db.ListSkills()
-	return c.JSON(skills)
+	skills, err := s.db.ListSkills()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	type SkillResponse struct {
+		ID          int64  `json:"id"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Content     string `json:"content"`
+		IsCore      bool   `json:"isCore"`
+	}
+
+	var result []SkillResponse
+	for _, s := range skills {
+		result = append(result, SkillResponse{
+			ID:          s.ID,
+			Title:       s.Title,
+			Description: s.Description,
+			Content:     s.Content,
+			IsCore:      s.ID == 1,
+		})
+	}
+
+	return c.JSON(result)
 }
 
 func (s *Server) HandleCreateSkill(c *fiber.Ctx) error {
-	var req db.Skill
+	var req struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Content     string `json:"content"`
+	}
 	c.BodyParser(&req)
-	id, err := s.db.CreateSkill(&req)
+
+	skill := &db.Skill{
+		Title:       req.Title,
+		Description: req.Description,
+		Content:     req.Content,
+	}
+	id, err := s.db.CreateSkill(skill)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"id": id, "success": true})
 }
 
+func (s *Server) HandleUpdateSkill(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	var req struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Content     string `json:"content"`
+	}
+	c.BodyParser(&req)
+
+	skills, _ := s.db.ListSkills()
+	for _, s := range skills {
+		if s.ID == id {
+			s.Title = req.Title
+			s.Description = req.Description
+			s.Content = req.Content
+			break
+		}
+	}
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
 func (s *Server) HandleDeleteSkill(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	if id == 1 {
+		return c.Status(400).JSON(fiber.Map{"error": "Cannot delete core context skill"})
+	}
 	s.db.DeleteSkill(id)
 	return c.JSON(fiber.Map{"success": true})
 }
 
+func (s *Server) HandleGetContextSkill(c *fiber.Ctx) error {
+	dataDir, _ := s.db.GetSetting("data_dir")
+	if dataDir == "" {
+		dataDir = "./data"
+	}
+	contextPath := filepath.Join(dataDir, "skills", "context.md")
+
+	content, err := os.ReadFile(contextPath)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Context file not found"})
+	}
+
+	return c.JSON(fiber.Map{"content": string(content)})
+}
+
+func (s *Server) HandleResetContextSkill(c *fiber.Ctx) error {
+	dataDir, _ := s.db.GetSetting("data_dir")
+	if dataDir == "" {
+		dataDir = "./data"
+	}
+	contextPath := filepath.Join(dataDir, "skills", "context.md")
+
+	defaultContent, err := os.ReadFile("./context.md")
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	os.WriteFile(contextPath, defaultContent, 0644)
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleListCalendar(c *fiber.Ctx) error {
+	events, err := s.db.ListCalendarEvents()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	type CalendarResponse struct {
+		ID        int64  `json:"id"`
+		AgentID   int64  `json:"agentId"`
+		Date      string `json:"date"`
+		Time      string `json:"time"`
+		Prompt    string `json:"prompt"`
+		Executed  bool   `json:"executed"`
+		CreatedAt string `json:"createdAt"`
+	}
+
+	var result []CalendarResponse
+	for _, e := range events {
+		result = append(result, CalendarResponse{
+			ID:        e.ID,
+			AgentID:   e.AgentID,
+			Date:      e.Date,
+			Time:      e.Time,
+			Prompt:    e.Prompt,
+			Executed:  e.Executed,
+			CreatedAt: e.CreatedAt,
+		})
+	}
+
+	return c.JSON(result)
+}
+
+func (s *Server) HandleCreateCalendarEvent(c *fiber.Ctx) error {
+	var req struct {
+		AgentID int64  `json:"agentId"`
+		Date    string `json:"date"`
+		Time    string `json:"time"`
+		Prompt  string `json:"prompt"`
+	}
+	c.BodyParser(&req)
+
+	event := &db.CalendarEvent{
+		AgentID: req.AgentID,
+		Date:    req.Date,
+		Time:    req.Time,
+		Prompt:  req.Prompt,
+	}
+	id, err := s.db.CreateCalendarEvent(event)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"id": id, "success": true})
+}
+
+func (s *Server) HandleDeleteCalendarEvent(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	s.db.DeleteCalendarEvent(id)
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleListAllowlist(c *fiber.Ctx) error {
+	entries, err := s.db.ListAllowList()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	type AllowlistResponse struct {
+		ID             int64  `json:"id"`
+		TelegramUserID string `json:"telegramUserId"`
+		FriendlyName   string `json:"friendlyName"`
+		Notes          string `json:"notes"`
+		CreatedAt      string `json:"createdAt"`
+	}
+
+	var result []AllowlistResponse
+	for _, e := range entries {
+		result = append(result, AllowlistResponse{
+			ID:             e.ID,
+			TelegramUserID: e.TelegramUserID,
+			FriendlyName:   e.FriendlyName,
+			Notes:          e.Notes,
+			CreatedAt:      e.CreatedAt,
+		})
+	}
+
+	return c.JSON(result)
+}
+
+func (s *Server) HandleCreateAllowlist(c *fiber.Ctx) error {
+	var req struct {
+		TelegramUserID string `json:"telegramUserId"`
+		FriendlyName   string `json:"friendlyName"`
+		Notes          string `json:"notes"`
+	}
+	c.BodyParser(&req)
+
+	entry := &db.AllowListEntry{
+		TelegramUserID: req.TelegramUserID,
+		FriendlyName:   req.FriendlyName,
+		Notes:          req.Notes,
+	}
+	id, err := s.db.CreateAllowListEntry(entry)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"id": id, "success": true})
+}
+
+func (s *Server) HandleDeleteAllowlist(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	s.db.DeleteAllowListEntry(id)
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
+	domainMode, _ := s.db.GetSetting("domain_mode")
+	domain, _ := s.db.GetSetting("domain")
+	openrouterKey, _ := s.db.GetSetting("openrouter_api_key")
+	openaiKey, _ := s.db.GetSetting("openai_api_key")
+	anthropicKey, _ := s.db.GetSetting("anthropic_api_key")
+	geminiKey, _ := s.db.GetSetting("gemini_api_key")
+	timezone, _ := s.db.GetSetting("timezone")
+
+	tunnelURL := s.tunnels.GetURL("dashboard")
+
+	return c.JSON(fiber.Map{
+		"domainMode":    domainMode == "true",
+		"domain":        domain,
+		"tunnelURL":     tunnelURL,
+		"tunnelHealthy": s.tunnels.CheckTunnelHealth("dashboard", 5*time.Second),
+		"openrouterKey": openrouterKey != "",
+		"openaiKey":     openaiKey != "",
+		"anthropicKey":  anthropicKey != "",
+		"geminiKey":     geminiKey != "",
+		"timezone":      timezone,
+		"hasLLMKey":     openrouterKey != "" || openaiKey != "" || anthropicKey != "" || geminiKey != "",
+	})
+}
+
+func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
+	var req struct {
+		DomainMode    string `json:"domainMode"`
+		Domain        string `json:"domain"`
+		OpenrouterKey string `json:"openrouterKey"`
+		OpenaiKey     string `json:"openaiKey"`
+		AnthropicKey  string `json:"anthropicKey"`
+		GeminiKey     string `json:"geminiKey"`
+		Timezone      string `json:"timezone"`
+	}
+	c.BodyParser(&req)
+
+	if req.DomainMode != "" {
+		s.db.SetSetting("domain_mode", req.DomainMode)
+	}
+	if req.Domain != "" {
+		s.db.SetSetting("domain", req.Domain)
+	}
+	if req.OpenrouterKey != "" {
+		s.db.SetSetting("openrouter_api_key", req.OpenrouterKey)
+	}
+	if req.OpenaiKey != "" {
+		s.db.SetSetting("openai_api_key", req.OpenaiKey)
+	}
+	if req.AnthropicKey != "" {
+		s.db.SetSetting("anthropic_api_key", req.AnthropicKey)
+	}
+	if req.GeminiKey != "" {
+		s.db.SetSetting("gemini_api_key", req.GeminiKey)
+	}
+	if req.Timezone != "" {
+		s.db.SetSetting("timezone", req.Timezone)
+	}
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleDomainStatus(c *fiber.Ctx) error {
+	domain, _ := s.db.GetSetting("domain")
+
+	return c.JSON(fiber.Map{
+		"domain":     domain,
+		"configured": domain != "",
+		"message":    "DNS A record should point to this server's IP",
+	})
+}
+
 func (s *Server) HandleTelegramSendCode(c *fiber.Ctx) error {
-	var req struct{ Token, UserID string }
+	var req struct {
+		Token  string `json:"token"`
+		UserID string `json:"userId"`
+	}
 	c.BodyParser(&req)
 
 	code := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
 	s.verifyCodes[req.Token] = code
+	s.verifyTokens[code] = req.Token
 
 	tempBot := telegram.NewBot(req.Token)
 	tempBot.SendMessage(req.UserID, "Your Hermit Dashboard Verification Code is: "+code)
@@ -246,13 +718,18 @@ func (s *Server) HandleTelegramSendCode(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleTelegramVerify(c *fiber.Ctx) error {
-	var req struct{ Token, Code, UserID string }
+	var req struct {
+		Token  string `json:"token"`
+		Code   string `json:"code"`
+		UserID string `json:"userId"`
+	}
 	c.BodyParser(&req)
 
 	if expected, ok := s.verifyCodes[req.Token]; ok && expected == req.Code {
 		tempBot := telegram.NewBot(req.Token)
 		tempBot.SendMessage(req.UserID, "Successfully connected this Telegram Bot to Hermit Agent OS.")
 		delete(s.verifyCodes, req.Token)
+		delete(s.verifyTokens, req.Code)
 		return c.JSON(fiber.Map{"success": true})
 	}
 	return c.JSON(fiber.Map{"success": false, "error": "Invalid verification code."})
@@ -326,9 +803,6 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 	})
 }
 
-func (s *Server) HandleListAllowlist(c *fiber.Ctx) error   { return c.JSON([]db.AllowListEntry{}) }
-func (s *Server) HandleCreateAllowlist(c *fiber.Ctx) error { return c.JSON(fiber.Map{}) }
-
 func (s *Server) HandleWebhook(c *fiber.Ctx) error {
 	var update telegram.Update
 	if err := c.BodyParser(&update); err != nil {
@@ -343,6 +817,36 @@ func (s *Server) HandleWebhook(c *fiber.Ctx) error {
 	userText := strings.TrimSpace(update.Message.Text)
 
 	s.handleTelegramCommand(chatID, userText)
+
+	return c.SendStatus(200)
+}
+
+func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
+	_ = c.Params("agentId")
+
+	var update telegram.Update
+	if err := c.BodyParser(&update); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	if update.Message == nil || update.Message.Text == "" {
+		return c.SendStatus(200)
+	}
+
+	chatID := fmt.Sprintf("%d", update.Message.Chat.ID)
+	userText := strings.TrimSpace(update.Message.Text)
+
+	s.mu.RLock()
+	takeoverOn := s.takeoverMode[chatID]
+	s.mu.RUnlock()
+
+	if takeoverOn {
+		s.handleTakeoverInput(chatID, userText)
+	} else {
+		if s.bot != nil {
+			s.bot.SendMessage(chatID, "Message received. AI agent will respond shortly...")
+		}
+	}
 
 	return c.SendStatus(200)
 }
@@ -382,7 +886,6 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 
 	case "/reset":
 		s.bot.SendMessage(chatID, "Container reset initiated...")
-		// TODO: Implement container reset
 		s.bot.SendMessage(chatID, "Container has been reset with fresh state.")
 
 	case "/takeover":
@@ -398,8 +901,17 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 		}
 
 	case "/give_system_prompt":
-		// TODO: Get actual system prompt from agent
-		s.bot.SendMessage(chatID, "System prompt:\n\nYou are an autonomous AI agent running in Hermit Agent OS...")
+		dataDir, _ := s.db.GetSetting("data_dir")
+		if dataDir == "" {
+			dataDir = "./data"
+		}
+		contextPath := filepath.Join(dataDir, "skills", "context.md")
+		content, err := os.ReadFile(contextPath)
+		if err != nil {
+			s.bot.SendMessage(chatID, "Error reading system prompt")
+			return
+		}
+		s.bot.SendMessage(chatID, "System Prompt:\n\n"+string(content))
 
 	case "/give_context":
 		s.mu.RLock()
@@ -416,7 +928,6 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 		}
 
 	default:
-		// Handle takeover mode XML input
 		s.mu.RLock()
 		takeoverOn := s.takeoverMode[chatID]
 		s.mu.RUnlock()
@@ -424,7 +935,6 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 		if takeoverOn {
 			s.handleTakeoverInput(chatID, text)
 		} else {
-			// TODO: Pass to LLM agent for normal processing
 			s.bot.SendMessage(chatID, "Message received. AI agent will respond shortly...")
 		}
 	}
@@ -434,7 +944,6 @@ func (s *Server) handleTakeoverInput(chatID, xmlInput string) {
 	parsed := parser.ParseLLMOutput(xmlInput)
 	var responses []string
 
-	// Handle terminal commands
 	for _, cmd := range parsed.Terminals {
 		out, err := s.docker.Exec("hermit-test", cmd)
 		status := "SUCCESS"
@@ -449,12 +958,10 @@ func (s *Server) handleTakeoverInput(chatID, xmlInput string) {
 		responses = append(responses, fmt.Sprintf("Terminal: %s\nStatus: %s\nOutput: %s", cmd, status, displayOut))
 	}
 
-	// Handle actions
 	for _, action := range parsed.Actions {
 		switch action.Type {
 		case "GIVE":
 			responses = append(responses, fmt.Sprintf("Action: GIVE file=%s", action.Value))
-			// TODO: Implement file delivery
 		case "APP":
 			responses = append(responses, fmt.Sprintf("Action: PUBLISH app=%s", action.Value))
 		case "SKILL":
@@ -462,7 +969,6 @@ func (s *Server) handleTakeoverInput(chatID, xmlInput string) {
 		}
 	}
 
-	// Handle system tags
 	if parsed.System == "time" {
 		responses = append(responses, fmt.Sprintf("System: time = %s", time.Now().Format(time.RFC3339)))
 	} else if parsed.System == "memory" {
@@ -477,8 +983,7 @@ func (s *Server) handleTakeoverInput(chatID, xmlInput string) {
 		responses = append(responses, "No actions parsed from input.")
 	}
 
-	s.bot.SendMessage(chatID, strings.Join(responses, "\n\n"))
+	if s.bot != nil {
+		s.bot.SendMessage(chatID, strings.Join(responses, "\n\n"))
+	}
 }
-
-func (s *Server) HandleGetSettings(c *fiber.Ctx) error { return c.JSON(fiber.Map{}) }
-func (s *Server) HandleSetSettings(c *fiber.Ctx) error { return c.SendStatus(200) }

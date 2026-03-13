@@ -1,10 +1,10 @@
 # Hermit
 
-A hyper-optimized, Golang-based secure agentic OS designed for 1GB RAM VPS environments.
+A lightweight AI agent orchestrator built with Go, designed for efficient VPS environments.
 
 ## Overview
 
-Hermit is a lightweight AI agent orchestrator that replaces the heavier Node.js/V8 runtime with a compiled Go binary. By shifting from an "in-container agent" to an "agent-less host execution" model using `docker exec`, memory footprint drops from ~100MB to **<15MB**.
+Hermit provides a complete agentic OS with Docker-based agent containers, Telegram integration, and a web dashboard. It uses a compiled Go binary for minimal resource usage.
 
 ## Architecture
 
@@ -20,8 +20,8 @@ hermit/
 │   ├── parser/           # Regex-based XML contract parser
 │   ├── telegram/         # Bot API and webhook management
 │   └── workspace/        # File I/O, fsnotify (Portal watcher)
-├── dashboard/public/     # Static HTML/JS/CSS dashboard
-├── context.md          # Base agent context template (immutable runtime skill)
+├── dashboard/              # React frontend (Vite + Bun)
+├── context.md              # Base agent context template (immutable runtime skill)
 ├── docs/                # Technical docs and scenarios
 └── hermit               # Compiled binary
 ```
@@ -38,9 +38,9 @@ A regex-based parsing engine that extracts AI intent without crashing on LLM for
 - `<action type="SKILL">filename.md</action>` - Load skill files
 - `<calendar>` - Scheduled events
 
-### Agent-less Docker Orchestration (Cubicles)
+### Docker Orchestration
 Manages container lifecycles natively from the host:
-- Cubicle Spawning: `docker run -d --name hermit_agent_X alpine/debian sleep infinity`
+- Container Spawning: `docker run -d --name hermit_agent_X alpine/debian sleep infinity`
 - Command Execution: `docker exec -w /app/workspace/work <container> sh -c "<cmd>"`
 - Each agent runs in an isolated Docker container with its own workspace
 
@@ -112,15 +112,6 @@ Manages container lifecycles natively from the host:
 - Reverse proxy for apps at `/apps/{appname}`
 - Tunnel/webhook health monitoring
 
-## Resource Usage
-
-| Metric | HermitShell (Node.js) | Hermit (Go) | Improvement |
-|--------|----------------------|-------------|-------------|
-| Idle RAM (Host) | 80MB - 120MB | 8MB - 15MB | ~90% reduction |
-| Idle RAM (Per Cubicle) | 40MB | 1MB | ~97% reduction |
-| Startup Time | ~2.5 seconds | < 0.1 seconds | Instant |
-| Dependencies | 150MB+ | Single binary | Massive savings |
-
 ## Quick Start
 
 ```bash
@@ -132,7 +123,7 @@ go build -o hermit ./cmd/hermit/main.go
 ```
 
 Server starts on port 3000:
-- Dashboard: http://localhost:3000/dashboard/
+- Dashboard: http://localhost:3000/
 - API: http://localhost:3000/api/
 
 ## Environment Variables
@@ -162,7 +153,7 @@ Default credentials:
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/agent-tests/xml-contract` | POST | Test XML parser |
+| `/api/test-contract` | POST | Test contract parser |
 | `/api/agents` | GET, POST | List/Create agents |
 | `/api/agents/:id` | GET, PUT, DELETE, POST | Agent CRUD + start/stop |
 | `/api/settings` | GET, POST | Get/Set settings |
@@ -176,7 +167,7 @@ Default credentials:
 | `/api/calendar` | GET, POST | Calendar events |
 | `/api/tunnels` | GET, POST | Tunnel management |
 | `/api/telegram/verify` | POST | Verify Telegram bot |
-| `/dashboard/` | GET | Serve dashboard |
+| `/` | GET | Serve dashboard |
 | `/webhook/` | POST | Telegram webhook |
 
 ## Testing
