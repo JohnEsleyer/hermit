@@ -2,7 +2,9 @@ package api
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -124,7 +126,65 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Post("/webhook", s.HandleWebhook)
 	api.Post("/webhook/:agentId", s.HandleAgentWebhook)
 
+	// Agent Specific Skills
+	api.Get("/agents/:id/skills", s.HandleListAgentSkills)
+	api.Post("/agents/:id/skills", s.HandleSaveSkill)
+	api.Delete("/agents/:id/skills/:skillId", s.HandleDeleteSkill)
+
+	// App serving
+	api.Get("/apps/:agentId/:appName/*", s.HandleServeApp)
+	api.Get("/apps/:agentId/:appName", s.HandleServeApp)
+
 	s.setupStaticRoutes(app)
+}
+
+func (s *Server) HandleServeApp(c *fiber.Ctx) error {
+	agentID := c.Params("agentId")
+	appName := c.Params("appName")
+	file := c.Params("*")
+	if file == "" {
+		file = "index.html"
+	}
+
+	path := filepath.Join("data", "agents", agentID, "workspace", "apps", appName, file)
+	return c.SendFile(path)
+}
+
+func (s *Server) HandleListAgentSkills(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	skills, err := s.db.ListSkills() // Ideally filter by agentId or show all
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	
+	// Filter global skills + this agent's skills if we had agentId in skill table
+	var result []db.Skill
+	for _, sk := range skills {
+		if sk.AgentID == 0 || sk.AgentID == id {
+			result = append(result, *sk)
+		}
+	}
+
+	return c.JSON(result)
+}
+
+func (s *Server) HandleSaveSkill(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	var skill db.Skill
+	if err := c.BodyParser(&skill); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
+	}
+	skill.AgentID = id
+	var err error
+	if skill.ID > 0 {
+		err = s.db.UpdateSkill(&skill)
+	} else {
+		_, err = s.db.CreateSkill(&skill)
+	}
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func (s *Server) setupStaticRoutes(app *fiber.App) {
@@ -135,7 +195,7 @@ func (s *Server) setupStaticRoutes(app *fiber.App) {
 
 	app.Use(func(c *fiber.Ctx) error {
 		path := c.Path()
-		if strings.HasPrefix(path, "/api") {
+		if strings.HasPrefix(path, "/api") || strings.HasPrefix(path, "/apps") {
 			return c.Next()
 		}
 		return c.SendFile(distPath + "/index.html")
@@ -379,6 +439,16 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Create agent workspace directories
+	basePath := fmt.Sprintf("data/agents/%d/workspace", id)
+	os.MkdirAll(filepath.Join(basePath, "in"), 0755)
+	os.MkdirAll(filepath.Join(basePath, "out"), 0755)
+	os.MkdirAll(filepath.Join(basePath, "work"), 0755)
+	os.MkdirAll(filepath.Join(basePath, "apps"), 0755)
+	
+	// Create a dummy context.md if it doesn't exist
+	os.WriteFile(fmt.Sprintf("data/agents/%d/context.md", id), []byte(a.Personality), 0644)
+
 	go func() {
 		time.Sleep(2 * time.Second)
 		existing, err := s.db.GetAgent(id)
@@ -588,7 +658,11 @@ func (s *Server) HandleUpdateSkill(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleDeleteSkill(c *fiber.Ctx) error {
-	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	skillIDStr := c.Params("skillId")
+	if skillIDStr == "" {
+		skillIDStr = c.Params("id")
+	}
+	id, _ := strconv.ParseInt(skillIDStr, 10, 64)
 	if id == 1 {
 		return c.Status(400).JSON(fiber.Map{"error": "Cannot delete core context skill"})
 	}
@@ -888,66 +962,21 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 	var req struct {
 		Payload string `json:"payload"`
 		UserID  string `json:"userId"`
+		AgentID int64  `json:"agentId"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid JSON"})
 	}
 
-	parsed := parser.ParseLLMOutput(req.Payload)
-	var feedback []map[string]interface{}
-
-	for _, cmd := range parsed.Terminals {
-		out, err := s.docker.Exec("hermit-test", cmd)
-		status := "SUCCESS"
-		if err != nil {
-			status = "FAILED"
-		}
-
-		displayOut := out
-		if len(out) > 100 {
-			displayOut = out[:100] + "..."
-		}
-
-		feedback = append(feedback, map[string]interface{}{
-			"terminal":     cmd,
-			"status":       status,
-			"terminal-out": displayOut,
-		})
+	agent, _ := s.db.GetAgent(req.AgentID)
+	var agentBot *telegram.Bot
+	if agent != nil {
+		agentBot = telegram.NewBot(agent.TelegramToken)
 	}
 
-	if parsed.System == "time" {
-		feedback = append(feedback, map[string]interface{}{
-			"status": "SUCCESS",
-			"time":   time.Now().Format(time.RFC3339),
-		})
-	} else if parsed.System == "memory" {
-		hostStats, _ := s.docker.LatestSystemMetrics()
-		memMB := float64(hostStats.Host.MemoryUsed) / (1024 * 1024)
-		feedback = append(feedback, map[string]interface{}{
-			"status":          "SUCCESS",
-			"memory_usage_mb": memMB,
-		})
-	}
-
-	if parsed.Calendar != nil {
-		feedback = append(feedback, map[string]interface{}{
-			"status": "SUCCESS",
-			"calendar": map[string]interface{}{
-				"date":   parsed.Calendar.DateTime,
-				"prompt": parsed.Calendar.Prompt,
-			},
-		})
-	}
-
-	if len(feedback) == 0 {
-		feedback = append(feedback, map[string]interface{}{
-			"status":  "SUCCESS",
-			"message": "Payload parsed but no system actions generated.",
-		})
-	}
+	feedback := s.ExecuteXMLPayload(req.AgentID, req.UserID, req.Payload, agentBot)
 
 	return c.JSON(fiber.Map{
-		"parsed":        parsed,
 		"actionEffects": feedback,
 	})
 }
@@ -1010,6 +1039,11 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 		return c.SendStatus(200)
 	}
 
+	// Handle Commands
+	if strings.HasPrefix(userText, "/") {
+		return s.handleAgentCommand(agent, chatID, userText)
+	}
+
 	// Log user message
 	s.db.AddHistory(agentId, userID, "user", userText)
 
@@ -1025,6 +1059,104 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 	}
 
 	return c.SendStatus(200)
+}
+
+func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error {
+	bot := telegram.NewBot(agent.TelegramToken)
+	cmd := strings.Split(text, " ")[0]
+
+	switch cmd {
+	case "/status":
+		statusMsg := fmt.Sprintf("🤖 *Agent Status: %s*\n\n", agent.Name)
+		statusMsg += fmt.Sprintf("• Model: `%s`\n", agent.Model)
+		statusMsg += fmt.Sprintf("• Provider: `%s`\n", agent.Provider)
+		
+		containerStatus := "Stopped"
+		if agent.ContainerID != "" && s.docker != nil {
+			if s.docker.IsRunning(agent.ContainerID) {
+				containerStatus = "Running ✅"
+			} else {
+				containerStatus = "Stopped ❌"
+			}
+		}
+		statusMsg += fmt.Sprintf("• Container: `%s` (%s)\n", agent.ContainerID, containerStatus)
+		
+		info, err := bot.GetWebhookInfo()
+		if err != nil {
+			statusMsg += "• Webhook: ❌ Error fetching\n"
+		} else {
+			webhookStatus := "Mismatch ⚠️"
+			currentTunnel := s.tunnels.GetURL("dashboard")
+			if strings.HasPrefix(info.URL, currentTunnel) {
+				webhookStatus = "Active ✅"
+			}
+			statusMsg += fmt.Sprintf("• Webhook: %s (`%s`)\n", webhookStatus, info.URL)
+		}
+		
+		statusMsg += fmt.Sprintf("• User ID: `%s` (Allowed)\n", chatID)
+		statusMsg += fmt.Sprintf("• Dashboard: `%s`\n", s.tunnels.GetURL("dashboard"))
+		
+		bot.SendMessage(chatID, statusMsg)
+
+	case "/help":
+		helpMsg := "🤖 *Hermit Agent Commands*\n\n"
+		helpMsg += "• /status - Show configuration & health\n"
+		helpMsg += "• /clear - Wipe chat context\n"
+		helpMsg += "• /reset - Restart container\n"
+		helpMsg += "• /takeover - Toggle manual control\n"
+		helpMsg += "• /give_system_prompt - Get persona\n"
+		helpMsg += "• /give_context - Get full history"
+		bot.SendMessage(chatID, helpMsg)
+
+	case "/clear":
+		s.db.ClearHistory(agent.ID)
+		bot.SendMessage(chatID, "🧹 Context window and chat history cleared!")
+
+	case "/reset":
+		bot.SendMessage(chatID, "🔄 Container reset initiated...")
+		if agent.ContainerID != "" && s.docker != nil {
+			s.docker.Stop(agent.ContainerID)
+			s.docker.Remove(agent.ContainerID)
+			// Status will be updated by monitor
+		}
+		bot.SendMessage(chatID, "✅ Container has been reset. Fresh environment ready.")
+
+	case "/takeover":
+		s.mu.Lock()
+		active := s.takeoverMode[chatID]
+		s.takeoverMode[chatID] = !active
+		newState := s.takeoverMode[chatID]
+		s.mu.Unlock()
+		
+		if newState {
+			bot.SendMessage(chatID, "🟢 *TAKEOVER MODE ENABLED*\nXML commands will be parsed directly. LLM is paused.")
+		} else {
+			bot.SendMessage(chatID, "🔴 *TAKEOVER MODE DISABLED*\nControl returned to LLM.")
+		}
+
+	case "/give_system_prompt":
+		fileName := fmt.Sprintf("%s_personality.txt", agent.Name)
+		os.WriteFile(fileName, []byte(agent.Personality), 0644)
+		bot.SendDocument(chatID, fileName, "Agent Personality / System Prompt")
+		os.Remove(fileName)
+
+	case "/give_context":
+		history, _ := s.db.GetHistory(agent.ID, 50)
+		var sb strings.Builder
+		for i := len(history) - 1; i >= 0; i-- {
+			h := history[i]
+			sb.WriteString(fmt.Sprintf("[%s] %s: %s\n\n", h.CreatedAt, h.Role, h.Content))
+		}
+		fileName := fmt.Sprintf("%s_context.txt", agent.Name)
+		os.WriteFile(fileName, []byte(sb.String()), 0644)
+		bot.SendDocument(chatID, fileName, "Full Conversation Context")
+		os.Remove(fileName)
+
+	default:
+		bot.SendMessage(chatID, "Unknown command. Use /help (if implemented) or check the manual.")
+	}
+
+	return nil
 }
 
 func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText string) {
@@ -1063,11 +1195,17 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		return
 	}
 
-	// Log agent response
+	// Log agent response (Full trace)
 	s.db.AddHistory(agent.ID, "assistant", "assistant", response)
 	
-	// Send to Telegram
-	tempBot.SendMessage(chatID, response)
+	// Execute the XML actions from the response
+	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, tempBot)
+
+	// Commit with <end> and feedback
+	if len(feedback) > 0 {
+		feedbackJSON, _ := json.Marshal(feedback)
+		s.db.AddHistory(agent.ID, "system", "system", string(feedbackJSON)+"\n<end>")
+	}
 }
 
 func (s *Server) getLLMClientForAgent(agent *db.Agent) *llm.Client {
@@ -1195,24 +1333,33 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 	}
 }
 
-func (s *Server) handleTakeoverInput(agentID int64, chatID, xmlInput string, bot *telegram.Bot) {
+func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *telegram.Bot) []map[string]interface{} {
 	parsed := parser.ParseLLMOutput(xmlInput)
-	var responses []string
+	var feedback []map[string]interface{}
 
-	if agentID > 0 {
-		s.db.AddHistory(agentID, "system", "system", "Takeover command: "+xmlInput)
+	agent, _ := s.db.GetAgent(agentID)
+	containerName := "hermit-test"
+	if agent != nil && agent.ContainerID != "" {
+		containerName = agent.ContainerID
 	}
 
-	for _, cmd := range parsed.Terminals {
-		// Use agent-specific container if available
-		containerName := "hermit-test"
-		if agentID > 0 {
-			agent, _ := s.db.GetAgent(agentID)
-			if agent != nil && agent.ContainerID != "" {
-				containerName = agent.ContainerID
-			}
-		}
+	// 1. Handle Thought (Internal only, no feedback needed)
+	if parsed.Thought != "" && agentID > 0 {
+		// Log thought if needed
+	}
 
+	// 2. Handle Message (Telegram user)
+	if parsed.Message != "" && bot != nil {
+		err := bot.SendMessage(chatID, parsed.Message)
+		status := "SUCCESS"
+		if err != nil {
+			status = "FAILED: " + err.Error()
+		}
+		feedback = append(feedback, map[string]interface{}{"action": "MESSAGE", "status": status})
+	}
+
+	// 3. Handle Terminals
+	for _, cmd := range parsed.Terminals {
 		out, err := s.docker.Exec(containerName, cmd)
 		status := "SUCCESS"
 		if err != nil {
@@ -1223,42 +1370,84 @@ func (s *Server) handleTakeoverInput(agentID int64, chatID, xmlInput string, bot
 		if len(out) > 500 {
 			displayOut = out[:500] + "..."
 		}
-		responses = append(responses, fmt.Sprintf("Terminal: %s\nStatus: %s\nOutput: %s", cmd, status, displayOut))
+		feedback = append(feedback, map[string]interface{}{
+			"terminal": cmd,
+			"status":   status,
+			"output":   displayOut,
+		})
 	}
 
+	// 4. Handle Actions (GIVE, APP, SKILL)
 	for _, action := range parsed.Actions {
 		switch action.Type {
 		case "GIVE":
-			responses = append(responses, fmt.Sprintf("Action: GIVE file=%s", action.Value))
+			if agentID > 0 && bot != nil {
+				filePath := filepath.Join(fmt.Sprintf("data/agents/%d/workspace/out", agentID), action.Value)
+				err := bot.SendDocument(chatID, filePath, "Requested file: "+action.Value)
+				status := "SUCCESS"
+				if err != nil {
+					status = "FAILED"
+					log.Printf("GIVE error: %v", err)
+				}
+				feedback = append(feedback, map[string]interface{}{"action": "GIVE", "file": action.Value, "status": status})
+			}
 		case "APP":
-			responses = append(responses, fmt.Sprintf("Action: PUBLISH app=%s", action.Value))
+			if agentID > 0 && bot != nil {
+				// Verify app directory exists
+				appPath := filepath.Join(fmt.Sprintf("data/agents/%d/workspace/apps", agentID), action.Value)
+				if _, err := os.Stat(appPath); err == nil {
+					publicURL := s.tunnels.GetURL("dashboard") + fmt.Sprintf("/api/apps/%d/%s", agentID, action.Value)
+					bot.SendMessage(chatID, "🚀 App Published! Access it here: "+publicURL)
+					feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "SUCCESS", "url": publicURL})
+				} else {
+					feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "FAILED", "error": "App directory not found"})
+				}
+			}
 		case "SKILL":
-			responses = append(responses, fmt.Sprintf("Action: LOAD skill=%s", action.Value))
+			if agentID > 0 {
+				skillName := action.Value
+				if !strings.HasSuffix(skillName, ".md") {
+					skillName += ".md"
+				}
+				skillPath := filepath.Join("data", "skills", skillName)
+				content, err := os.ReadFile(skillPath)
+				if err == nil {
+					s.db.AddHistory(agentID, "system", "system", "Skill loaded ["+skillName+"]:\n\n"+string(content)+"\n<end>")
+					feedback = append(feedback, map[string]interface{}{"action": "SKILL", "skill": action.Value, "status": "SUCCESS"})
+				} else {
+					feedback = append(feedback, map[string]interface{}{"action": "SKILL", "skill": action.Value, "status": "FAILED", "error": "Skill not found"})
+				}
+			}
 		}
 	}
 
+	// 5. Handle System
 	if parsed.System == "time" {
-		responses = append(responses, fmt.Sprintf("System: time = %s", time.Now().Format(time.RFC3339)))
+		feedback = append(feedback, map[string]interface{}{"system": "time", "value": time.Now().Format(time.RFC3339)})
 	} else if parsed.System == "memory" {
 		if s.docker != nil {
 			stats, _ := s.docker.LatestSystemMetrics()
 			memMB := float64(stats.Host.MemoryUsed) / (1024 * 1024)
-			responses = append(responses, fmt.Sprintf("System: memory = %.2f MB", memMB))
+			feedback = append(feedback, map[string]interface{}{"system": "memory", "value": fmt.Sprintf("%.2f MB", memMB)})
 		}
 	}
 
-	if len(responses) == 0 {
-		responses = append(responses, "No actions parsed from input.")
+	// 6. Handle Calendar
+	if parsed.Calendar != nil && agentID > 0 {
+		// Parse DateTime or Date/Time
+		// For now simple log to history as mock execution
+		s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Scheduled: %s - %s", parsed.Calendar.DateTime, parsed.Calendar.Prompt))
+		feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "SUCCESS"})
 	}
 
-	respStr := strings.Join(responses, "\n\n")
-	if agentID > 0 {
-		s.db.AddHistory(agentID, "system", "system", respStr)
-	}
+	return feedback
+}
 
-	if bot != nil {
-		bot.SendMessage(chatID, respStr)
-	} else if s.bot != nil {
-		s.bot.SendMessage(chatID, respStr)
-	}
+func (s *Server) handleTakeoverInput(agentId int64, chatID, xmlInput string, bot *telegram.Bot) {
+	// Execute the actions
+	feedback := s.ExecuteXMLPayload(agentId, chatID, xmlInput, bot)
+	
+	// Log feedback and add <end>
+	feedbackJSON, _ := json.Marshal(feedback)
+	s.db.AddHistory(agentId, "system", "system", string(feedbackJSON)+"\n<end>")
 }

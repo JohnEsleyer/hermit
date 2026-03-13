@@ -17,10 +17,10 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
 
   const fetchSkills = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/skills`);
+      const res = await fetch(`${API_BASE}/api/agents/${agent.id}/skills`);
       const data = await res.json();
-      setSkills(data);
-      if (data.length > 0) setSelectedSkillId(data[0].id);
+      setSkills(Array.isArray(data) ? data : []);
+      if (data.length > 0 && !selectedSkillId) setSelectedSkillId(data[0].id);
     } catch (err) {
       console.error('Failed to fetch skills:', err);
     } finally {
@@ -30,35 +30,30 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
 
   useEffect(() => {
     fetchSkills();
-  }, []);
+  }, [agent.id]);
 
   const selectedSkill = skills.find(s => s.id === selectedSkillId) || skills[0];
 
   const handleCreate = async () => {
     const newSkill = { title: 'new_skill.md', description: 'Description here', content: '' };
     try {
-      const res = await fetch(`${API_BASE}/api/skills`, {
+      await fetch(`${API_BASE}/api/agents/${agent.id}/skills`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newSkill),
       });
-      const data = await res.json();
       triggerToast('Skill created');
       fetchSkills();
-      setSelectedSkillId(data.id);
     } catch (err) {
       triggerToast('Failed to create skill', 'error');
     }
   };
 
   const handleDelete = async () => {
-    if (selectedSkillId === 1) {
-      triggerToast('Cannot delete core context.md', 'error');
-      return;
-    }
+    if (!selectedSkillId) return;
     if (!confirm('Delete this skill?')) return;
     try {
-      await fetch(`${API_BASE}/api/skills/${selectedSkillId}`, { method: 'DELETE' });
+      await fetch(`${API_BASE}/api/agents/${agent.id}/skills/${selectedSkillId}`, { method: 'DELETE' });
       triggerToast('Skill deleted');
       fetchSkills();
     } catch (err) {
@@ -69,11 +64,14 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
   const handleUpdate = async (field: string, value: string) => {
     if (!selectedSkill) return;
     try {
-      await fetch(`${API_BASE}/api/skills/${selectedSkill.id}`, {
-        method: 'PUT',
+      // Use POST or implement PUT in backend. For now let's assume POST can update if ID is provided
+      await fetch(`${API_BASE}/api/agents/${agent.id}/skills`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [field]: value }),
+        body: JSON.stringify({ ...selectedSkill, [field]: value }),
       });
+      // Optionally refresh to see changes or just update local state
+      setSkills(prev => prev.map(s => s.id === selectedSkill.id ? { ...s, [field]: value } : s));
     } catch (err) {
       console.error('Failed to update skill:', err);
     }
@@ -90,7 +88,7 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
   return (
     <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 sm:p-6 animate-in fade-in duration-300">
       <div className="bg-zinc-950 border border-zinc-800 w-full max-w-7xl h-[min(88vh,980px)] rounded-[2.5rem] relative flex flex-col shadow-2xl overflow-hidden">
-        
+
         <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
           <div>
             <h2 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -114,7 +112,7 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
         <div className="flex flex-1 overflow-hidden">
           <div className="w-1/3 border-r border-zinc-800 p-4 overflow-y-auto bg-[#0a0a0a] flex flex-col gap-2">
             {skills.map(skill => (
-              <button 
+              <button
                 key={skill.id}
                 onClick={() => setSelectedSkillId(skill.id)}
                 className={`p-4 rounded-2xl text-left transition-all border ${selectedSkillId === skill.id ? 'bg-zinc-900 border-zinc-700' : 'bg-transparent border-transparent hover:bg-zinc-900/50'}`}
@@ -129,7 +127,7 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
             <div className="flex gap-4">
               <div className="flex-1">
                 <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">Filename</label>
-                <input 
+                <input
                   value={selectedSkill?.title || ''}
                   onChange={e => handleUpdate('title', e.target.value)}
                   disabled={selectedSkillId === 1}
@@ -138,7 +136,7 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
               </div>
               <div className="flex-[2]">
                 <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">Description</label>
-                <input 
+                <input
                   value={selectedSkill?.description || ''}
                   onChange={e => handleUpdate('description', e.target.value)}
                   className="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-zinc-600"
@@ -147,7 +145,7 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
             </div>
             <div className="flex-1 flex flex-col">
               <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">Content (Markdown)</label>
-              <textarea 
+              <textarea
                 value={selectedSkill?.content || ''}
                 onChange={e => handleUpdate('content', e.target.value)}
                 className="flex-1 bg-black border border-zinc-800 rounded-xl p-6 text-zinc-300 font-mono text-sm outline-none focus:border-zinc-600 resize-none"

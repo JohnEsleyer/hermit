@@ -710,3 +710,8 @@ func (d *DB) DeleteSkill(id int64) error {
 	_, err := d.db.Exec("DELETE FROM skills WHERE id = ?", id)
 	return err
 }
+
+func (d *DB) UpdateSkill(s *Skill) error {
+	_, err := d.db.Exec("UPDATE skills SET title=?, description=?, content=? WHERE id=?", s.Title, s.Description, s.Content, s.ID)
+	return err
+}

@@ -28,34 +28,34 @@ export function TestModal({ agent, onClose }: TestModalProps) {
 
   const handleSend = async () => {
     if (!input.trim()) return;
-    
+
     setLogs(prev => [...prev, { id: Date.now(), source: 'input', content: input }]);
-    
+
     try {
       const res = await fetch(`${API_BASE}/api/test-contract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payload: input, userId: 'test' }),
+        body: JSON.stringify({ payload: input, userId: 'test', agentId: agent.id }),
       });
       const data = await res.json();
-      
+
       if (data.actionEffects) {
         data.actionEffects.forEach((effect: any) => {
-          setLogs(prev => [...prev, { 
-            id: Date.now() + Math.random(), 
-            source: 'system', 
-            content: JSON.stringify(effect, null, 2) 
+          setLogs(prev => [...prev, {
+            id: Date.now() + Math.random(),
+            source: 'system',
+            content: JSON.stringify(effect, null, 2)
           }]);
         });
       }
     } catch (err) {
-      setLogs(prev => [...prev, { 
-        id: Date.now(), 
-        source: 'system', 
-        content: JSON.stringify({ error: 'Failed to process' }, null, 2) 
+      setLogs(prev => [...prev, {
+        id: Date.now(),
+        source: 'system',
+        content: JSON.stringify({ error: 'Failed to process' }, null, 2)
       }]);
     }
-    
+
     setInput('');
   };
 
@@ -66,7 +66,7 @@ export function TestModal({ agent, onClose }: TestModalProps) {
   return (
     <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 sm:p-6 animate-in fade-in duration-300">
       <div className="bg-zinc-950 border border-zinc-800 w-full max-w-7xl h-[min(88vh,980px)] rounded-[2.5rem] relative flex flex-col shadow-2xl overflow-hidden">
-        
+
         <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
           <div>
             <h2 className="text-2xl font-bold text-white flex items-center gap-3">
@@ -87,11 +87,10 @@ export function TestModal({ agent, onClose }: TestModalProps) {
         <div className="flex flex-1 overflow-hidden">
           <div className="w-1/2 border-r border-zinc-800 p-6 overflow-y-auto bg-[#0a0a0a] flex flex-col gap-4">
             {logs.map(log => (
-              <div key={log.id} className={`p-4 rounded-xl border font-mono text-sm whitespace-pre-wrap animate-in slide-in-from-top-2 duration-300 ${
-                log.source === 'telegram' ? 'bg-blue-950/30 border-blue-900/50 text-blue-200' :
-                log.source === 'input' ? 'bg-yellow-950/30 border-yellow-900/50 text-yellow-200' :
-                'bg-emerald-950/30 border-emerald-900/50 text-emerald-200'
-              }`}>
+              <div key={log.id} className={`p-4 rounded-xl border font-mono text-sm whitespace-pre-wrap animate-in slide-in-from-top-2 duration-300 ${log.source === 'telegram' ? 'bg-blue-950/30 border-blue-900/50 text-blue-200' :
+                  log.source === 'input' ? 'bg-yellow-950/30 border-yellow-900/50 text-yellow-200' :
+                    'bg-emerald-950/30 border-emerald-900/50 text-emerald-200'
+                }`}>
                 <div className="text-[10px] uppercase tracking-wider opacity-50 mb-2">{log.source}</div>
                 {log.content}
               </div>
@@ -101,14 +100,14 @@ export function TestModal({ agent, onClose }: TestModalProps) {
 
           <div className="w-1/2 p-6 flex flex-col bg-zinc-950">
             <label className="text-sm font-bold text-zinc-400 mb-4 uppercase tracking-wider">XML Input</label>
-            <textarea 
+            <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
               className="flex-1 bg-black border border-zinc-800 rounded-2xl p-6 text-zinc-300 font-mono text-sm outline-none focus:border-zinc-600 resize-none"
               placeholder="<terminal>echo 'hello world'</terminal>&#10;<message>Executing command...</message>"
             />
             <div className="mt-6 flex justify-end">
-              <button 
+              <button
                 onClick={handleSend}
                 className="bg-white text-black px-8 py-4 rounded-full font-bold flex items-center gap-2 hover:bg-zinc-200 transition-colors"
               >

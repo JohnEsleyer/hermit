@@ -311,3 +311,14 @@ func (c *Client) HostStats() (HostMetrics, error) {
 	}
 	return metrics.Host, nil
 }
+
+func (c *Client) IsRunning(name string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	inspect, err := c.cli.ContainerInspect(ctx, name)
+	if err != nil {
+		return false
+	}
+	return inspect.State.Running
+}
