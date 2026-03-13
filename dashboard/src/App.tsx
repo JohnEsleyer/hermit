@@ -160,7 +160,7 @@ export default function App() {
           {currentTab === 'containers' && <ContainersTab openModal={openModal} triggerToast={triggerToast} />}
           {currentTab === 'calendar' && <CalendarTab triggerToast={triggerToast} agents={agents} />}
           {currentTab === 'allowlist' && <AllowlistTab triggerToast={triggerToast} />}
-          {currentTab === 'settings' && <SettingsTab triggerToast={triggerToast} />}
+          {currentTab === 'settings' && <SettingsTab triggerToast={triggerToast} onLogout={handleLogout} />}
         </div>
       </main>
 

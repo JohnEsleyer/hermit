@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Globe, Key, RefreshCw } from 'lucide-react';
+import { Globe, Key, RefreshCw, LogOut } from 'lucide-react';
 
 const API_BASE = '';
 
 interface SettingsTabProps {
   triggerToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
+  onLogout: () => void;
 }
 
-export function SettingsTab({ triggerToast }: SettingsTabProps) {
+export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
   const [mode, setMode] = useState<'tunnel' | 'domain'>('tunnel');
   const [settings, setSettings] = useState({
     domainMode: false,
@@ -189,6 +190,16 @@ export function SettingsTab({ triggerToast }: SettingsTabProps) {
             <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
           </select>
         </div>
+      </div>
+
+      <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-8">
+        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3"><LogOut className="w-6 h-6" /> Session</h2>
+        <button 
+          onClick={onLogout}
+          className="bg-red-950 hover:bg-red-900 text-red-400 px-6 py-3 rounded-xl text-sm font-bold transition-colors flex items-center gap-2"
+        >
+          <LogOut className="w-4 h-4" /> Logout
+        </button>
       </div>
     </div>
   );
