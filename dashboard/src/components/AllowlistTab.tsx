@@ -17,10 +17,16 @@ export function AllowlistTab({ triggerToast }: AllowlistTabProps) {
   const fetchEntries = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/allowlist`);
+      if (!res.ok) {
+        console.error('Failed to fetch allowlist:', res.status);
+        setEntries([]);
+        return;
+      }
       const data = await res.json();
-      setEntries(data);
+      setEntries(data || []);
     } catch (err) {
       console.error('Failed to fetch allowlist:', err);
+      setEntries([]);
     } finally {
       setLoading(false);
     }
@@ -84,7 +90,7 @@ export function AllowlistTab({ triggerToast }: AllowlistTabProps) {
         </button>
       </div>
 
-      {entries.length === 0 ? (
+      {(!entries || entries.length === 0) ? (
         <div className="flex flex-col items-center justify-center text-zinc-500 py-20">
           <Shield className="w-16 h-16 mb-4 opacity-50" />
           <p className="text-lg font-medium">No users in allowlist</p>
@@ -102,7 +108,7 @@ export function AllowlistTab({ triggerToast }: AllowlistTabProps) {
               </tr>
             </thead>
             <tbody>
-              {entries.map(entry => (
+              {entries?.map(entry => (
                 <tr key={entry.id} className="border-b border-zinc-800/50 hover:bg-zinc-900/30">
                   <td className="p-6">
                     <div className="flex items-center gap-3">

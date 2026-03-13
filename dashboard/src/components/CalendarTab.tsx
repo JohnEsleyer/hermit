@@ -18,10 +18,16 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
   const fetchEvents = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/calendar`);
+      if (!res.ok) {
+        console.error('Failed to fetch calendar:', res.status);
+        setEvents([]);
+        return;
+      }
       const data = await res.json();
-      setEvents(data);
+      setEvents(data || []);
     } catch (err) {
       console.error('Failed to fetch calendar:', err);
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -87,7 +93,7 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
         </button>
       </div>
 
-      {events.length === 0 ? (
+      {(!events || events.length === 0) ? (
         <div className="flex flex-col items-center justify-center text-zinc-500 py-20">
           <CalendarIcon className="w-16 h-16 mb-4 opacity-50" />
           <p className="text-lg font-medium">No scheduled events</p>
@@ -95,7 +101,7 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
         </div>
       ) : (
         <div className="space-y-4">
-          {events.map(event => (
+          {events?.map(event => (
             <div key={event.id} className="bg-black border border-zinc-800 rounded-2xl p-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center">
@@ -134,7 +140,7 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
                   className="w-full bg-black border border-zinc-800 rounded-full px-6 py-3 text-white"
                 >
                   <option value={0}>Select agent...</option>
-                  {agents.map(a => (
+                  {agents?.map(a => (
                     <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
