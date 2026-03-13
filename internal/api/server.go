@@ -824,6 +824,17 @@ func (s *Server) HandleTunnelDetail(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) HandleApps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	apps := []map[string]string{}
+	json.NewEncoder(w).Encode(map[string]interface{}{"apps": apps})
+}
+
 type ContainerInfo struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`

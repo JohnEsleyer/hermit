@@ -115,42 +115,42 @@
             </div>
 
             <nav class="flex-1 px-4 space-y-1.5 overflow-y-auto">
-                <button onclick="showPanel('agents')"
+                <button onclick="showPanel(event, 'agents')"
                     class="nav-item active w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200">
                     <i data-lucide="bot" class="w-5 h-5 text-zinc-500"></i>
                     <span class="text-sm text-zinc-400">Agents</span>
                 </button>
-                <button onclick="showPanel('containers')"
+                <button onclick="showPanel(event, 'containers')"
                     class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
                     <i data-lucide="box" class="w-5 h-5 text-zinc-500"></i>
                     <span class="text-sm text-zinc-400">Containers</span>
                 </button>
-                <button onclick="showPanel('apps')"
+                <button onclick="showPanel(event, 'apps')"
                     class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
                     <i data-lucide="layout-grid" class="w-5 h-5 text-zinc-500"></i>
                     <span class="text-sm text-zinc-400">Apps</span>
                 </button>
-                <button onclick="showPanel('calendar')"
+                <button onclick="showPanel(event, 'calendar')"
                     class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
                     <i data-lucide="calendar" class="w-5 h-5 text-zinc-500"></i>
                     <span class="text-sm text-zinc-400">Calendar</span>
                 </button>
-                <button onclick="showPanel('allowlists')"
+                <button onclick="showPanel(event, 'allowlists')"
                     class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
                     <i data-lucide="list-checks" class="w-5 h-5 text-zinc-500"></i>
                     <span class="text-sm text-zinc-400">Allowlists</span>
                 </button>
-                <button onclick="showPanel('metrics')"
+                <button onclick="showPanel(event, 'metrics')"
                     class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
                     <i data-lucide="activity" class="w-5 h-5 text-zinc-500"></i>
                     <span class="text-sm text-zinc-400">Metrics</span>
                 </button>
-                <button onclick="showPanel('settings')"
+                <button onclick="showPanel(event, 'settings')"
                     class="nav-item w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
                     <i data-lucide="settings" class="w-5 h-5 text-zinc-500"></i>
                     <span class="text-sm text-zinc-400">Settings</span>
                 </button>
-                <button onclick="showPanel('domains')" id="nav-domains"
+                <button onclick="showPanel(event, 'domains')" id="nav-domains"
                     class="nav-item hidden w-full flex items-center space-x-3 px-3 py-2.5 rounded-xl transition-all duration-200 hover:bg-zinc-900/50">
                     <i data-lucide="globe" class="w-5 h-5 text-zinc-500"></i>
                     <span class="text-sm text-zinc-400">Domains</span>
@@ -535,8 +535,7 @@
                         class="flex-1 bg-zinc-900 hover:bg-slate-700 text-white py-4 rounded-2xl font-bold transition-all uppercase text-xs tracking-widest"
                         onclick="closeCreateAgentModal()">Cancel</button>
                     <button onclick="createAgent()"
-                        class="flex-1 bg-white hover:bg-zinc-200 text-black py-4 rounded-2xl font-bold transition-all uppercase text-xs tracking-widest shadow-lg shadow-white/20">Initiate
-                        Push</button>
+                        class="flex-1 bg-white hover:bg-zinc-200 text-black py-4 rounded-2xl font-bold transition-all uppercase text-xs tracking-widest shadow-lg shadow-white/20">Next</button>
                 </div>
             </div>
         </div>
@@ -666,6 +665,40 @@
         </div>
     </div>
 
+    <!-- Agent Test Modal -->
+    <div id="agent-test-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md items-center justify-center z-50 p-6 hidden">
+        <div class="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-6xl h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+            <div class="p-5 border-b border-zinc-800 flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-bold text-white">Agent Test Console</h3>
+                    <p id="agent-test-subtitle" class="text-xs text-zinc-500">Test actions by sending XML tags.</p>
+                </div>
+                <button onclick="closeAgentTestModal()" class="text-zinc-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-4 border-b border-zinc-800 flex gap-2">
+                <button onclick="seedAgentTestInput('terminal')" class="px-3 py-2 text-xs rounded-lg bg-zinc-900 hover:bg-zinc-800">Terminal Demo</button>
+                <button onclick="seedAgentTestInput('calendar')" class="px-3 py-2 text-xs rounded-lg bg-zinc-900 hover:bg-zinc-800">Calendar Demo</button>
+                <button onclick="seedAgentTestInput('system')" class="px-3 py-2 text-xs rounded-lg bg-zinc-900 hover:bg-zinc-800">System Demo</button>
+            </div>
+            <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 overflow-hidden">
+                <div class="border-r border-zinc-800 overflow-y-auto p-4 space-y-3" id="agent-test-log"></div>
+                <div class="p-4 flex flex-col gap-3">
+                    <textarea id="agent-test-xml" class="flex-1 bg-black border border-zinc-800 rounded-xl p-4 text-sm text-zinc-200 font-mono" placeholder="<terminal>ls -la</terminal>
+<message>Hello!</message>"></textarea>
+                    <button onclick="submitAgentTestXml()" class="bg-white text-black rounded-xl py-3 text-sm font-bold">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="feature-modal" class="fixed inset-0 bg-black/80 backdrop-blur-md items-center justify-center z-50 p-6 hidden">
+        <div class="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-lg p-8">
+            <h3 id="feature-modal-title" class="text-xl font-bold text-white mb-3">Feature</h3>
+            <p id="feature-modal-desc" class="text-zinc-400 text-sm mb-6"></p>
+            <button onclick="closeFeatureModal()" class="bg-white text-black px-4 py-2 rounded-xl text-sm font-bold">Close</button>
+        </div>
+    </div>
+
     <script>
         let agentData = {};
         let allowList = [];
@@ -700,7 +733,7 @@
             loadSettings();
             toggleAgentModelInput();
             if (!metricsInterval) {
-                metricsInterval = setInterval(loadMetrics, 3000);
+                metricsInterval = setInterval(loadMetrics, 1000);
             }
         }
 
@@ -884,7 +917,7 @@
             }
         }
 
-        function showPanel(name) {
+        function showPanel(evt, name) {
             if (name === 'allowlist') name = 'allowlists';
 
             document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -896,7 +929,7 @@
             document.getElementById('panel-title').textContent = panelTitles[name] || name;
             document.getElementById('deploy-agent-header-btn').classList.toggle('hidden', name !== 'agents');
 
-            event.target.closest('.nav-item')?.classList.add('active', 'bg-white/10', 'text-white', 'ring-1', 'ring-white/30');
+            evt?.target?.closest('.nav-item')?.classList.add('active', 'bg-white/10', 'text-white', 'ring-1', 'ring-white/30');
             lucide.createIcons();
         }
 
@@ -905,6 +938,7 @@
                 const res = await fetch('/api/agents');
                 agents = await res.json();
                 renderAgents();
+                loadApps();
             } catch (e) {
                 console.error('Failed to load agents:', e);
             }
@@ -967,7 +1001,7 @@
                     
                     <div class="grid grid-cols-4 border-t border-zinc-800 bg-zinc-950/20">
                         ${['Test', 'Skills', 'Config', 'Logs'].map((btn, i) => `
-                            <button onclick="handleAgentAction(${agent.id}, '${btn.toLowerCase()}')" class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900 transition-colors ${i !== 3 ? 'border-r border-zinc-800' : ''}">
+                            <button onclick="handleAgentAction(${agent.id}, '${btn.toLowerCase()}', '${escapeHtml(agent.name)}')" class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900 transition-colors ${i !== 3 ? 'border-r border-zinc-800' : ''}">
                                 ${btn}
                             </button>
                         `).join('')}
@@ -1147,7 +1181,17 @@
                 renderApps([]);
                 return;
             }
-            renderApps([]);
+            try {
+                const res = await fetch('/api/apps');
+                if (!res.ok) {
+                    renderApps([]);
+                    return;
+                }
+                const data = await res.json();
+                renderApps(Array.isArray(data) ? data : (data.apps || []));
+            } catch (e) {
+                renderApps([]);
+            }
         }
 
         async function loadMetrics() {
@@ -1194,6 +1238,10 @@
                 renderContainers();
             } catch (e) {
                 console.error('Failed to load metrics:', e);
+                document.getElementById('metric-cpu').textContent = 'Unavailable';
+                document.getElementById('metric-memory').textContent = 'Unavailable';
+                document.getElementById('metric-containers').textContent = '--';
+                document.getElementById('container-stats').innerHTML = '<p class="text-zinc-500 text-sm">Metrics source is unavailable. Ensure Docker daemon is running.</p>';
             }
         }
 
@@ -1265,9 +1313,13 @@
             document.getElementById('setting-agents-domain').disabled = !enabled;
         }
 
-        function handleAgentAction(agentID, action) {
-            const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
-            showMessage(`${actionLabel} for agent #${agentID} is coming soon.`, 'error');
+        function handleAgentAction(agentID, action, agentName) {
+            const normalized = (action || '').toLowerCase();
+            if (normalized === 'test') {
+                openAgentTestModal(agentID, agentName);
+                return;
+            }
+            openFeatureModal(normalized, agentName);
         }
 
         function openAppPasswordModal(appName) {
@@ -1438,6 +1490,102 @@
                 showMessage('Failed to create agent.', 'error');
             }
         }
+
+        let activeTestAgent = null;
+
+        function openFeatureModal(action, agentName) {
+            const title = action.charAt(0).toUpperCase() + action.slice(1);
+            document.getElementById('feature-modal-title').textContent = `${title} · ${agentName || 'Agent'}`;
+            document.getElementById('feature-modal-desc').textContent = `${title} UI is being finalized. This button is now wired and ready for the full workflow.`;
+            const modal = document.getElementById('feature-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeFeatureModal() {
+            const modal = document.getElementById('feature-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function openAgentTestModal(agentID, agentName) {
+            activeTestAgent = agentID;
+            document.getElementById('agent-test-subtitle').textContent = `Testing ${agentName || 'agent'} · Yellow: Dashboard XML · Green: System feedback`;
+            const modal = document.getElementById('agent-test-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            if (!document.getElementById('agent-test-log').innerHTML.trim()) {
+                prependAgentTestLog({ source: 'system', payload: { status: 'READY', message: 'Test console opened.' } });
+            }
+            lucide.createIcons();
+        }
+
+        function closeAgentTestModal() {
+            const modal = document.getElementById('agent-test-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        function seedAgentTestInput(type) {
+            const input = document.getElementById('agent-test-xml');
+            if (type === 'terminal') input.value = '<terminal>ls -la</terminal>\n<message>Hello!</message>';
+            if (type === 'calendar') input.value = '<calendar date="03/13/2026" time="07:00:00">remind me now to exercise!</calendar>';
+            if (type === 'system') input.value = '<system>time</system>';
+        }
+
+        function parseSimpleXmlToObject(xmlText) {
+            const result = {};
+            const tagPattern = /<([a-zA-Z0-9_-]+)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/g;
+            let match;
+            while ((match = tagPattern.exec(xmlText)) !== null) {
+                const key = match[1].toLowerCase();
+                const value = match[2].trim();
+                if (!value) continue;
+                if (result[key]) {
+                    if (!Array.isArray(result[key])) result[key] = [result[key]];
+                    result[key].push(value);
+                } else {
+                    result[key] = value;
+                }
+            }
+            return result;
+        }
+
+        function prependAgentTestLog(entry) {
+            const list = document.getElementById('agent-test-log');
+            const card = document.createElement('div');
+            const color = entry.source === 'telegram' ? 'border-blue-500/40 bg-blue-500/10' : entry.source === 'dashboard' ? 'border-amber-500/40 bg-amber-500/10' : 'border-emerald-500/40 bg-emerald-500/10';
+            card.className = `border ${color} rounded-xl p-3 text-xs animate-pulse`;
+            card.innerHTML = `<pre class="whitespace-pre-wrap break-words text-zinc-100">${escapeHtml(JSON.stringify(entry.payload, null, 2))}</pre>`;
+            list.prepend(card);
+            setTimeout(() => card.classList.remove('animate-pulse'), 600);
+        }
+
+        async function submitAgentTestXml() {
+            const xml = document.getElementById('agent-test-xml').value.trim();
+            if (!xml) {
+                showMessage('Please enter XML payload.', 'error');
+                return;
+            }
+
+            const parsed = parseSimpleXmlToObject(xml);
+            prependAgentTestLog({ source: 'dashboard', payload: parsed });
+
+            try {
+                const res = await fetch('/api/test-contract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ payload: xml, userId: String(activeTestAgent || '') })
+                });
+                const data = await res.json();
+                prependAgentTestLog({ source: 'system', payload: { status: 'SUCCESS', parsed: data.parsed || parsed, effects: data.actionEffects || [] } });
+                showMessage('Test payload processed.');
+            } catch (e) {
+                prependAgentTestLog({ source: 'system', payload: { status: 'ERROR', message: 'Failed to process payload.' } });
+                showMessage('Failed to process test payload.', 'error');
+            }
+        }
+
 
         document.getElementById('login-form').addEventListener('submit', handleLogin);
         document.getElementById('first-login-form').addEventListener('submit', handleFirstLoginSetup);
