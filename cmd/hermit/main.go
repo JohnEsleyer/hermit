@@ -169,17 +169,19 @@ func updateAgentWebhooks(database *db.DB, tm *cloudflare.TunnelManager, baseURL 
 }
 
 func tunnelHealthMonitor(tm *cloudflare.TunnelManager, port int) {
+	time.Sleep(10 * time.Second)
+
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		cleanupStaleCloudflaredProcesses()
-
 		if !tm.CheckTunnelHealth("dashboard", 5*time.Second) {
 			log.Printf("Tunnel health check failed, restarting tunnel...")
 
 			tm.StopTunnel("dashboard")
 			time.Sleep(2 * time.Second)
+
+			cleanupStaleCloudflaredProcesses()
 
 			url, err := tm.StartQuickTunnel("dashboard", port)
 			if err != nil {
