@@ -131,9 +131,9 @@ export function ConfigureModal({ agent, onClose, triggerToast }: ConfigureModalP
               onChange={e => {
                 const selected = allowlist.find(a => a.telegramUserId === e.target.value);
                 if (selected) {
-                  setFormData({ ...formData, telegramId: e.target.value, allowedUsers: selected.friendlyName });
+                  setFormData({ ...formData, telegramId: e.target.value, allowedUsers: e.target.value });
                 } else {
-                  setFormData({ ...formData, telegramId: e.target.value });
+                  setFormData({ ...formData, telegramId: e.target.value, allowedUsers: '' });
                 }
               }}
               className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors appearance-none"

@@ -231,7 +231,9 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
                         const selected = allowlist.find(a => a.telegramUserId === e.target.value);
                         setTelegramData({ ...telegramData, allowedUserId: e.target.value });
                         if (selected) {
-                          setFormData({ ...formData, allowedUsers: selected.friendlyName });
+                          setFormData({ ...formData, allowedUsers: e.target.value });
+                        } else {
+                          setFormData({ ...formData, allowedUsers: '' });
                         }
                       }}
                       className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors appearance-none"

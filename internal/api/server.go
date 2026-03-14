@@ -1338,23 +1338,42 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 	userText := strings.TrimSpace(update.Message.Text)
 	userID := fmt.Sprintf("%d", update.Message.From.ID)
 
+	// Log incoming message
+	log.Printf("[Telegram] Agent=%s, From=%s(@%s), Message=%s", agent.Name, userID, update.Message.From.Username, userText)
+	s.db.LogAction(agentId, "agent", "telegram_received", fmt.Sprintf("From: %s(@%s), Message: %s", userID, update.Message.From.Username, userText))
+
 	// Authorization check
 	allowed := false
+	authReason := ""
 	if agent.AllowedUsers == "" {
 		allowed = true
+		authReason = "no allowed_users set"
 	} else {
 		allowedUsers := strings.Split(agent.AllowedUsers, ",")
 		for _, u := range allowedUsers {
-			if strings.TrimSpace(u) == userID || strings.TrimSpace(u) == update.Message.From.Username {
+			trimmed := strings.TrimSpace(u)
+			if trimmed == userID {
 				allowed = true
+				authReason = "matched userID: " + userID
+				break
+			}
+			if trimmed == update.Message.From.Username {
+				allowed = true
+				authReason = "matched username: " + update.Message.From.Username
 				break
 			}
 		}
+		if !allowed {
+			authReason = fmt.Sprintf("userID=%s, username=%s, allowedUsers=%s", userID, update.Message.From.Username, agent.AllowedUsers)
+		}
 	}
+
+	// Log the authorization attempt
+	s.db.LogAction(agentId, "agent", "telegram_message", fmt.Sprintf("From: %s (ID: %s), Allowed: %v, Reason: %s", update.Message.From.Username, userID, allowed, authReason))
 
 	if !allowed {
 		tempBot := telegram.NewBot(agent.TelegramToken)
-		tempBot.SendMessage(chatID, "You are not authorized to use this agent.")
+		tempBot.SendMessage(chatID, fmt.Sprintf("You are not authorized to use this agent.\n\nDebug info:\n- Your ID: %s\n- Your username: @%s\n- Allowed users: %s", userID, update.Message.From.Username, agent.AllowedUsers))
 		return c.SendStatus(200)
 	}
 
@@ -1417,8 +1436,16 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 			statusMsg += fmt.Sprintf("• Webhook: %s (`%s`)\n", webhookStatus, info.URL)
 		}
 
-		statusMsg += fmt.Sprintf("• User ID: `%s` (Allowed)\n", chatID)
-		statusMsg += fmt.Sprintf("• Dashboard: `%s`\n", s.tunnels.GetURL("dashboard"))
+		statusMsg += fmt.Sprintf("\n🔐 *Authorization*\n")
+		statusMsg += fmt.Sprintf("• Allowed Users: `%s`\n", agent.AllowedUsers)
+		statusMsg += fmt.Sprintf("• Your User ID: `%s`\n", chatID)
+		if agent.AllowedUsers == "" {
+			statusMsg += "• Status: ✅ No restrictions\n"
+		} else {
+			statusMsg += "• Status: ⚠️ Restricted\n"
+		}
+
+		statusMsg += fmt.Sprintf("\n🌐 *Dashboard*: `%s`\n", s.tunnels.GetURL("dashboard"))
 
 		bot.SendMessage(chatID, statusMsg)
 
