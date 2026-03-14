@@ -1253,18 +1253,15 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 	agent, _ := s.db.GetAgent(req.AgentID)
 	var agentBot *telegram.Bot
 
-	// Only create bot and send to Telegram if not in test mode
-	// Test mode uses userId "test" or "test-user" - these are fake IDs
-	isTestMode := req.UserID == "test" || req.UserID == "test-user"
-
-	if agent != nil && !isTestMode {
+	// Create bot if agent exists - userId can be a real Telegram chat ID for testing
+	if agent != nil {
 		agentBot = telegram.NewBot(agent.TelegramToken)
 	}
 
 	feedback := s.ExecuteXMLPayload(req.AgentID, req.UserID, req.Payload, agentBot)
 
-	// In test mode, add raw payload to history (like real flow)
-	if isTestMode && agent != nil {
+	// Only add to history if userId is not a test placeholder
+	if req.UserID != "test" && req.UserID != "test-user" && agent != nil {
 		s.db.AddHistory(agent.ID, "assistant", "assistant", req.Payload)
 	}
 

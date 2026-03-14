@@ -17,6 +17,7 @@ interface LogEntry {
 
 export function TestModal({ agent, onClose }: TestModalProps) {
   const [input, setInput] = useState('');
+  const [chatId, setChatId] = useState('');
   const [logs, setLogs] = useState<LogEntry[]>([
     { id: 1, source: 'system', content: '{\n  "status": "READY",\n  "agent": "' + agent.name + '"\n}' }
   ]);
@@ -76,11 +77,13 @@ export function TestModal({ agent, onClose }: TestModalProps) {
 
     setLogs(prev => [...prev, { id: Date.now(), source: 'input', content: input }]);
 
+    const userId = chatId || 'test';
+
     try {
       const res = await fetch(`${API_BASE}/api/test-contract`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payload: input, userId: 'test', agentId: agent.id }),
+        body: JSON.stringify({ payload: input, userId: userId, agentId: agent.id }),
       });
       const data = await res.json();
 
@@ -152,7 +155,15 @@ export function TestModal({ agent, onClose }: TestModalProps) {
           </div>
 
           <div className="w-1/2 p-6 flex flex-col bg-zinc-950">
-            <label className="text-sm font-bold text-zinc-400 mb-4 uppercase tracking-wider">XML Input</label>
+            <label className="text-sm font-bold text-zinc-400 mb-2 uppercase tracking-wider">Telegram Chat ID (optional)</label>
+            <input
+              type="text"
+              value={chatId}
+              onChange={e => setChatId(e.target.value)}
+              className="mb-4 bg-black border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 font-mono text-sm outline-none focus:border-zinc-600"
+              placeholder="Enter your Telegram chat ID to test actual Telegram sending"
+            />
+            <label className="text-sm font-bold text-zinc-400 mb-2 uppercase tracking-wider">XML Input</label>
             <textarea
               value={input}
               onChange={e => setInput(e.target.value)}
