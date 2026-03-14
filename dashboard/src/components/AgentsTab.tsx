@@ -1,5 +1,5 @@
 import { Agent } from '../types';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Trash2, MessageSquare, Key, FileCode, History } from 'lucide-react';
 
 interface AgentsTabProps {
   agents: Agent[];
@@ -33,52 +33,88 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
   }
 
   return (
-    <div className="flex-1">
-      <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
+    <div className="flex-1 animate-in fade-in duration-500">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {agents.map(agent => (
-          <div key={agent.id} className="bg-black border border-zinc-800 rounded-[2.5rem] overflow-hidden hover:border-zinc-700 transition-colors flex flex-col">
-            <div className="h-28 bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 relative">
-              {agent.bannerUrl && (
-                <img src={agent.bannerUrl} alt={`${agent.name} banner`} className="w-full h-full object-cover" />
-              )}
-              <div className="absolute inset-0 bg-black/20" />
-            </div>
-
-            <div className="p-8 -mt-8 flex-1 flex flex-col">
-              <div className="flex justify-between items-start mb-6">
-                <div className="w-16 h-16 bg-zinc-900 rounded-full flex items-center justify-center text-2xl font-black border-2 border-zinc-800 overflow-hidden shadow-lg">
-                  {agent.profilePic ? (
-                    <img src={agent.profilePic} alt={agent.name} className="w-full h-full object-cover" />
-                  ) : (
-                    agent.name.charAt(0).toUpperCase()
-                  )}
-                </div>
-                <div className="px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest bg-zinc-900 text-white flex items-center gap-2 border border-zinc-800/50">
+          <div key={agent.id} className="bg-zinc-950 border border-zinc-800 rounded-[2rem] p-6 flex flex-col hover:border-zinc-700 transition-all duration-300 shadow-xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-14 h-14 bg-zinc-900 rounded-2xl flex items-center justify-center text-xl font-bold border border-zinc-800 overflow-hidden shadow-lg shrink-0">
+                {agent.profilePic ? (
+                  <img src={agent.profilePic} alt={agent.name} className="w-full h-full object-cover" onError={(e) => {
+                    (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${agent.name}&background=111&color=fff`;
+                  }} />
+                ) : (
+                  <span className="text-zinc-600">{agent.name.charAt(0).toUpperCase()}</span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-bold text-white truncate">{agent.name}</h3>
+                <p className="text-xs text-zinc-500 truncate">{agent.role}</p>
+                <div className="flex items-center gap-2 mt-1">
                   {agent.status === 'standby' ? (
                     <>
-                      <RefreshCw className="w-3 h-3 animate-spin text-yellow-400" />
-                      <span className="text-yellow-400">setting up</span>
+                      <RefreshCw className="w-2 h-2 animate-spin text-yellow-400" />
+                      <span className="text-[10px] text-yellow-400 uppercase font-bold tracking-widest">Setting up</span>
                     </>
                   ) : (
                     <>
-                      <div className={`w-2 h-2 rounded-full ${agent.status === 'running' ? 'bg-emerald-400' : 'bg-zinc-600'}`}></div>
-                      <span>{agent.status}</span>
+                      <span className={`w-2 h-2 rounded-full ${agent.status === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-600'}`} />
+                      <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest">{agent.status}</span>
                     </>
                   )}
                 </div>
               </div>
-              <h3 className="text-3xl font-bold tracking-tight mb-2 lowercase">{agent.name}</h3>
-              <p className="text-sm text-zinc-500 mb-2 lowercase">{agent.role}</p>
-              {agent.provider && (
-                <p className="text-xs text-zinc-600 mb-4">Provider: {agent.provider}</p>
-              )}
-              <div className="mt-auto grid grid-cols-2 gap-3">
-                <button onClick={() => openModal('testConsole', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">chat / test</button>
-                <button onClick={() => openModal('skills', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">skills</button>
-                <button onClick={() => openModal('configure', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">configure</button>
-                <button onClick={() => openModal('logs', agent)} className="bg-zinc-900 hover:bg-white hover:text-black text-white rounded-full py-3.5 text-xs font-bold transition-all">chat history</button>
-                <button onClick={() => handleDelete(agent)} className="col-span-2 bg-red-950/30 hover:bg-red-900/50 text-red-400 rounded-full py-3.5 text-xs font-bold transition-all">delete agent</button>
+            </div>
+
+            {/* Info Grid */}
+            <div className="flex flex-col gap-3 mb-6 bg-black/40 p-4 rounded-xl border border-zinc-800/50">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1 font-bold">Provider</div>
+                  <div className="text-xs text-zinc-400 font-mono truncate">{agent.provider || 'Not set'}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1 font-bold">Model</div>
+                  <div className="text-xs text-zinc-400 font-mono truncate">{agent.model || 'Not set'}</div>
+                </div>
               </div>
+            </div>
+
+            {/* Actions */}
+            <div className="mt-auto flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => openModal('testConsole', agent)}
+                  className="h-10 bg-white text-black hover:bg-zinc-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-sm"
+                >
+                  <MessageSquare className="w-3.5 h-3.5" /> Chat/Test
+                </button>
+                <button
+                  onClick={() => openModal('skills', agent)}
+                  className="h-10 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-zinc-800"
+                >
+                  <Key className="w-3.5 h-3.5" /> Skills
+                </button>
+                <button
+                  onClick={() => openModal('configure', agent)}
+                  className="h-10 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-zinc-800"
+                >
+                  <FileCode className="w-3.5 h-3.5" /> Configure
+                </button>
+                <button
+                  onClick={() => openModal('logs', agent)}
+                  className="h-10 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-zinc-800"
+                >
+                  <History className="w-3.5 h-3.5" /> History
+                </button>
+              </div>
+              <button
+                onClick={() => handleDelete(agent)}
+                className="w-full h-9 rounded-xl text-[10px] font-bold text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-all border border-red-500/10 flex items-center justify-center gap-2 uppercase tracking-widest"
+              >
+                <Trash2 className="w-3 h-3" /> Delete Agent
+              </button>
             </div>
           </div>
         ))}
