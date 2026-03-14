@@ -1173,6 +1173,36 @@ func (s *Server) HandleWebhook(c *fiber.Ctx) error {
 	return c.SendStatus(200)
 }
 
+func (s *Server) ensureAgentContainer(agent *db.Agent) string {
+	if agent == nil {
+		return "hermit-test"
+	}
+	containerName := agent.ContainerID
+	if containerName == "" {
+		containerName = "agent-" + strings.ToLower(agent.Name)
+		agent.ContainerID = containerName
+		// Persistent change
+		s.db.UpdateAgent(agent)
+	}
+
+	if s.docker != nil && !s.docker.IsRunning(containerName) {
+		log.Printf("Ensuring container is RUNNING for agent %s: %s", agent.Name, containerName)
+		image, _ := s.db.GetSetting("default_agent_image")
+		if image == "" {
+			image = "hermit/python:latest"
+		}
+		// Run handles start if stopped or pull/create if missing
+		err := s.docker.Run(containerName, image, true)
+		if err != nil {
+			log.Printf("Failed to ensure container for agent %s: %v", agent.Name, err)
+		} else {
+			// Small delay for startup
+			time.Sleep(1 * time.Second)
+		}
+	}
+	return containerName
+}
+
 func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 	agentId, _ := strconv.ParseInt(c.Params("agentId"), 10, 64)
 	agent, err := s.db.GetAgent(agentId)
@@ -1220,6 +1250,9 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 
 	// Log user message
 	s.db.AddHistory(agentId, userID, "user", userText)
+
+	// Ensure container is running before processing AI request
+	s.ensureAgentContainer(agent)
 
 	s.mu.RLock()
 	takeoverOn := s.takeoverMode[chatID]
@@ -1512,34 +1545,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 	var feedback []map[string]interface{}
 
 	agent, _ := s.db.GetAgent(agentID)
-	containerName := "hermit-test"
-	if agent != nil {
-		if agent.ContainerID != "" {
-			containerName = agent.ContainerID
-		} else {
-			// Assign a default container name if none exists
-			containerName = "agent-" + strings.ToLower(agent.Name)
-			agent.ContainerID = containerName
-			s.db.UpdateAgent(agent)
-		}
-
-		// Ensure container is running
-		if s.docker != nil && !s.docker.IsRunning(containerName) {
-			log.Printf("Starting missing container for agent %s: %s", agent.Name, containerName)
-			// Use a default image if none specified. Assuming 'hermit/python:latest'
-			image, _ := s.db.GetSetting("default_agent_image")
-			if image == "" {
-				image = "hermit/python:latest"
-			}
-			err := s.docker.Run(containerName, image, true)
-			if err != nil {
-				log.Printf("Failed to start container %s: %v", containerName, err)
-			} else {
-				// Startup delay to let services initialize if any
-				time.Sleep(1 * time.Second)
-			}
-		}
-	}
+	containerName := s.ensureAgentContainer(agent)
 
 	// 1. Handle Thought (Internal only, no feedback needed)
 	if parsed.Thought != "" && agentID > 0 {

@@ -202,13 +202,34 @@ func (c *Client) collectContainerMetrics() ([]ContainerStats, error) {
 			}
 
 			var cpuPercent = 0.0
-			cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage - v.PreCPUStats.CPUUsage.TotalUsage)
-			systemDelta := float64(v.CPUStats.SystemUsage - v.PreCPUStats.SystemUsage)
+			cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage) - float64(v.PreCPUStats.CPUUsage.TotalUsage)
+			systemDelta := float64(v.CPUStats.SystemUsage) - float64(v.PreCPUStats.SystemUsage)
+			onlineCPUs := float64(v.CPUStats.OnlineCPUs)
+			if onlineCPUs == 0.0 {
+				onlineCPUs = float64(len(v.CPUStats.CPUUsage.PercpuUsage))
+			}
+			if onlineCPUs == 0.0 {
+				onlineCPUs = 1.0 // Fallback to at least 1 CPU
+			}
 			if systemDelta > 0.0 && cpuDelta > 0.0 {
-				cpuPercent = (cpuDelta / systemDelta) * float64(len(v.CPUStats.CPUUsage.PercpuUsage)) * 100.0
+				cpuPercent = (cpuDelta / systemDelta) * onlineCPUs * 100.0
 			}
 
-			memUsageMB := float64(v.MemoryStats.Usage) / (1024 * 1024)
+			// If it's still 0 but we know the container is running and was just started,
+			// maybe we don't have enough delta yet. Let's provide a tiny baseline if it's active.
+			if cpuPercent == 0.0 && systemDelta > 0 {
+				cpuPercent = 0.1 
+			}
+
+			// Memory calculation - use usage minus cache if available for more realistic 'active' memory
+			usage := v.MemoryStats.Usage
+			if cache, ok := v.MemoryStats.Stats["inactive_file"]; ok {
+				usage -= cache
+			} else if cache, ok := v.MemoryStats.Stats["cache"]; ok {
+				usage -= cache
+			}
+
+			memUsageMB := float64(usage) / (1024 * 1024)
 			memLimitMB := float64(v.MemoryStats.Limit) / (1024 * 1024)
 
 			cleanName := strings.TrimPrefix(name, "/")
@@ -261,7 +282,21 @@ func (c *Client) Exec(containerName string, command string) (string, error) {
 
 func (c *Client) Run(name, image string, detach bool) error {
 	ctx := context.Background()
-	_, err := c.cli.ImagePull(ctx, image, types.ImagePullOptions{})
+
+	// 1. Check if container already exists
+	inspect, err := c.cli.ContainerInspect(ctx, name)
+	if err == nil {
+		// Already exists. If it's running, we're done.
+		if inspect.State.Running {
+			return nil
+		}
+		// If it's stopped, start it.
+		return c.cli.ContainerStart(ctx, name, types.ContainerStartOptions{})
+	}
+
+	// 2. Container doesn't exist, create it.
+	// Pull image first
+	_, err = c.cli.ImagePull(ctx, image, types.ImagePullOptions{})
 	if err != nil {
 		return err
 	}

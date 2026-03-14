@@ -50,17 +50,26 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
     }
   };
 
+  const [actionPendingIds, setActionPendingIds] = useState<string[]>([]);
+
   const handleAction = async (container: ContainerItem, action: 'start' | 'stop') => {
+    setActionPendingIds(prev => [...prev, container.id]);
     try {
-      await fetch(`${API_BASE}/api/containers/${container.id}/action`, {
+      const res = await fetch(`${API_BASE}/api/containers/${container.id}/action`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
       });
-      triggerToast(`Container ${action} initiated`);
-      fetchContainers();
+      if (!res.ok) throw new Error();
+      triggerToast(`Container ${action} initiated`, 'success');
+      await fetchContainers();
     } catch (err) {
       triggerToast(`Failed to ${action} container`, 'error');
+    } finally {
+      // Small artificial delay to let Docker settle
+      setTimeout(() => {
+        setActionPendingIds(prev => prev.filter(id => id !== container.id));
+      }, 1000);
     }
   };
 
@@ -182,16 +191,22 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
                     {container.status === 'running' ? (
                       <button
                         onClick={() => handleAction(container, 'stop')}
-                        className="flex-1 h-12 bg-zinc-900 text-red-500 hover:bg-red-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center border border-zinc-800"
+                        disabled={actionPendingIds.includes(container.id)}
+                        className="flex-1 h-12 bg-zinc-900 text-red-500 hover:bg-red-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center border border-zinc-800 disabled:opacity-50"
                       >
-                        Stop
+                        {actionPendingIds.includes(container.id) ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+                        ) : 'Stop'}
                       </button>
                     ) : (
                       <button
                         onClick={() => handleAction(container, 'start')}
-                        className="flex-1 h-12 bg-zinc-900 text-emerald-500 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center border border-zinc-800"
+                        disabled={actionPendingIds.includes(container.id)}
+                        className="flex-1 h-12 bg-zinc-900 text-emerald-500 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center border border-zinc-800 disabled:opacity-50"
                       >
-                        Start
+                        {actionPendingIds.includes(container.id) ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-zinc-400" />
+                        ) : 'Start'}
                       </button>
                     )}
                     <button
