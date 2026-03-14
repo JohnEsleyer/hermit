@@ -1263,12 +1263,9 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 
 	feedback := s.ExecuteXMLPayload(req.AgentID, req.UserID, req.Payload, agentBot)
 
-	// In test mode, add simulated message to history for display
+	// In test mode, add raw payload to history (like real flow)
 	if isTestMode && agent != nil {
-		parsed := parser.ParseLLMOutput(req.Payload)
-		if parsed.Message != "" {
-			s.db.AddHistory(agent.ID, "assistant", "assistant", parsed.Message)
-		}
+		s.db.AddHistory(agent.ID, "assistant", "assistant", req.Payload)
 	}
 
 	return c.JSON(fiber.Map{
