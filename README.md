@@ -10,7 +10,9 @@ Hermit provides a complete agentic OS with Docker-based agent containers, Telegr
 
 ```
 hermit/
-├── cmd/hermit/           # Main application entry point
+├── cmd/
+│   ├── hermit/           # Main application entry point
+│   └── cli/              # Terminal UI interface
 ├── internal/
 │   ├── api/              # HTTP Handlers (Dashboard, Webhooks, Telegram)
 │   ├── cloudflare/       # Cloudflare Tunnel integration
@@ -54,6 +56,42 @@ docker build -t hermit-agent:latest .
 Server starts on port 3000:
 - Dashboard: http://localhost:3000/
 - API: http://localhost:3000/api/
+
+## CLI Interface
+
+Hermit includes a terminal-based interface for managing agents:
+
+```bash
+# Build the CLI
+go build -o hermit-cli ./cmd/cli/
+
+# Run
+./hermit-cli
+```
+
+### Environment Variables
+
+Create a `.env` file (optional):
+
+```bash
+HERMIT_API_BASE=http://localhost:3000
+HERMIT_CLI_USER=admin
+HERMIT_CLI_PASS=your_password
+```
+
+### Controls
+
+| Key | Action |
+|-----|--------|
+| `↑/↓` or `j/k` | Navigate agents |
+| `Enter` | View agent details |
+| `r` | Refresh |
+| `q` | Quit |
+
+The CLI displays:
+- Agent list with status
+- Detailed view with context window, token count, word count
+- Estimated cost (for Gemini models)
 
 ## Dashboard Panels
 
