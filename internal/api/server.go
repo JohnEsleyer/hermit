@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,8 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/option"
 )
 
 var distFS embed.FS
@@ -962,20 +965,71 @@ func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
 		history = []*db.HistoryEntry{}
 	}
 
-	totalWords := 0
-	for _, h := range history {
-		words := len(strings.Fields(h.Content))
-		totalWords += words
-	}
-
 	contextPath := fmt.Sprintf("data/agents/%d/context.md", id)
-	if data, err := os.ReadFile(contextPath); err == nil {
-		contextWords := len(strings.Fields(string(data)))
-		totalWords += contextWords
-	}
+	contextData, _ := os.ReadFile(contextPath)
 
-	tokenEstimate := int(float64(totalWords) / 0.75)
-	contextWindow := getModelContextWindow(agent.Model)
+	var totalWords int
+	var tokenEstimate int
+	var contextWindow int
+
+	isGemini := strings.Contains(strings.ToLower(agent.Provider), "gemini")
+
+	if isGemini {
+		geminiKey, _ := s.db.GetSetting("gemini_api_key")
+		if geminiKey != "" {
+			ctx := context.Background()
+			client, err := genai.NewClient(ctx, option.WithAPIKey(geminiKey))
+			if err == nil {
+				defer client.Close()
+
+				modelName := agent.Model
+				if !strings.HasPrefix(modelName, "models/") {
+					modelName = "models/" + modelName
+				}
+
+				fullContent := ""
+				if contextData != nil {
+					fullContent = string(contextData)
+				}
+				for _, h := range history {
+					fullContent += "\n" + h.Content
+				}
+
+				if fullContent != "" {
+					model := client.GenerativeModel(modelName)
+					resp, err := model.CountTokens(ctx, genai.Text(fullContent))
+					if err == nil {
+						tokenEstimate = int(resp.TotalTokens)
+						totalWords = int(float64(tokenEstimate) * 0.75)
+					}
+				}
+			}
+		}
+
+		if tokenEstimate == 0 {
+			for _, h := range history {
+				totalWords += len(strings.Fields(h.Content))
+			}
+			if contextData != nil {
+				totalWords += len(strings.Fields(string(contextData)))
+			}
+			tokenEstimate = int(float64(totalWords) / 0.75)
+			contextWindow = getModelContextWindow(agent.Model)
+		}
+	} else {
+		for _, h := range history {
+			words := len(strings.Fields(h.Content))
+			totalWords += words
+		}
+
+		if contextData != nil {
+			contextWords := len(strings.Fields(string(contextData)))
+			totalWords += contextWords
+		}
+
+		tokenEstimate = int(float64(totalWords) / 0.75)
+		contextWindow = getModelContextWindow(agent.Model)
+	}
 
 	stats := AgentStats{
 		WordCount:     totalWords,
