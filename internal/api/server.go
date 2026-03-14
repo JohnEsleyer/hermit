@@ -257,6 +257,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Delete("/containers/:id", s.HandleTerminateContainer)
 	api.Post("/containers/:id/action", s.HandleContainerAction)
 	api.Get("/containers/:id/files", s.HandleContainerFiles)
+	api.Get("/containers/:id/download", s.HandleContainerDownload)
 
 	api.Get("/settings", s.HandleGetSettings)
 	api.Post("/settings", s.HandleSetSettings)
@@ -623,15 +624,66 @@ func (s *Server) HandleContainerFiles(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "agent not found"})
 	}
 
-	files, err := s.docker.ListContainerFiles(containerID, path)
+	hostPath := strings.Replace(path, "/app/workspace", fmt.Sprintf("data/agents/%d/workspace", agentID), 1)
+
+	entries, err := os.ReadDir(hostPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(fiber.Map{"path": path, "files": []interface{}{}})
+		}
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	var files []map[string]interface{}
+	for _, entry := range entries {
+		info, _ := entry.Info()
+		files = append(files, map[string]interface{}{
+			"name":    entry.Name(),
+			"size":    info.Size(),
+			"isDir":   entry.IsDir(),
+			"modTime": info.ModTime().Format("Jan 2 15:04"),
+		})
 	}
 
 	return c.JSON(fiber.Map{
 		"path":  path,
 		"files": files,
 	})
+}
+
+func (s *Server) HandleContainerDownload(c *fiber.Ctx) error {
+	containerID := c.Params("id")
+	filename := c.Query("file")
+	folder := c.Query("folder", "out")
+
+	if filename == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "file query parameter required"})
+	}
+
+	agents, _ := s.db.ListAgents()
+	var agentID int64
+	for _, a := range agents {
+		contName := a.ContainerID
+		if contName == "" {
+			contName = "agent-" + strings.ToLower(a.Name)
+		}
+		if contName == containerID {
+			agentID = a.ID
+			break
+		}
+	}
+
+	if agentID == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "agent not found"})
+	}
+
+	filePath := filepath.Join(fmt.Sprintf("data/agents/%d/workspace/%s", agentID, folder), filename)
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return c.Status(404).JSON(fiber.Map{"error": "file not found"})
+	}
+
+	return c.Download(filePath, filename)
 }
 
 func (s *Server) HandleListAgents(c *fiber.Ctx) error {
