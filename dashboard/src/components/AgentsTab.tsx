@@ -36,10 +36,19 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
     <div className="flex-1 animate-in fade-in duration-500">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-6">
         {agents.map(agent => (
-          <div key={agent.id} className="bg-zinc-950 border border-zinc-800 rounded-[2rem] p-6 flex flex-col hover:border-zinc-700 transition-all duration-300 shadow-xl overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-14 h-14 bg-zinc-900 rounded-2xl flex items-center justify-center text-xl font-bold border border-zinc-800 overflow-hidden shadow-lg shrink-0">
+          <div key={agent.id} className="bg-zinc-950 border border-zinc-800 rounded-[2rem] overflow-hidden hover:border-zinc-700 transition-all duration-300 shadow-xl">
+            {/* Banner */}
+            <div className="h-20 bg-gradient-to-r from-zinc-900 via-zinc-800 to-zinc-900 relative">
+              {agent.bannerUrl && (
+                <img src={agent.bannerUrl} alt={`${agent.name} banner`} className="w-full h-full object-cover" />
+              )}
+              <div className="absolute inset-0 bg-black/30" />
+            </div>
+
+            {/* Content */}
+            <div className="p-6 -mt-8 relative">
+              {/* Profile Picture - hovering over banner */}
+              <div className="absolute -top-2 left-6 w-16 h-16 bg-zinc-900 rounded-2xl flex items-center justify-center text-xl font-bold border-2 border-zinc-800 overflow-hidden shadow-lg shrink-0 z-10">
                 {agent.profilePic ? (
                   <img src={agent.profilePic} alt={agent.name} className="w-full h-full object-cover" onError={(e) => {
                     (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${agent.name}&background=111&color=fff`;
@@ -48,13 +57,17 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
                   <span className="text-zinc-600">{agent.name.charAt(0).toUpperCase()}</span>
                 )}
               </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-bold text-white truncate">{agent.name}</h3>
-                <p className="text-xs text-zinc-500 truncate">{agent.role}</p>
-                <div className="flex items-center gap-2 mt-1">
+
+              {/* Header info */}
+              <div className="flex justify-between items-start mb-6 pt-2">
+                <div className="flex-1 min-w-0 ml-20">
+                  <h3 className="text-lg font-bold text-white truncate">{agent.name}</h3>
+                  <p className="text-xs text-zinc-500 truncate">{agent.role}</p>
+                </div>
+                <div className="flex items-center gap-2">
                   {agent.status === 'standby' ? (
                     <>
-                      <RefreshCw className="w-2 h-2 animate-spin text-yellow-400" />
+                      <RefreshCw className="w-3 h-3 animate-spin text-yellow-400" />
                       <span className="text-[10px] text-yellow-400 uppercase font-bold tracking-widest">Setting up</span>
                     </>
                   ) : (
@@ -65,24 +78,23 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
                   )}
                 </div>
               </div>
-            </div>
 
-            {/* Info Grid */}
-            <div className="flex flex-col gap-3 mb-6 bg-black/40 p-4 rounded-xl border border-zinc-800/50">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1 font-bold">Provider</div>
-                  <div className="text-xs text-zinc-400 font-mono truncate">{agent.provider || 'Not set'}</div>
-                </div>
-                <div>
-                  <div className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1 font-bold">Model</div>
-                  <div className="text-xs text-zinc-400 font-mono truncate">{agent.model || 'Not set'}</div>
+              {/* Info Grid */}
+              <div className="flex flex-col gap-3 mb-6 bg-black/40 p-4 rounded-xl border border-zinc-800/50">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1 font-bold">Provider</div>
+                    <div className="text-xs text-zinc-400 font-mono truncate">{agent.provider || 'Not set'}</div>
+                  </div>
+                  <div>
+                    <div className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] mb-1 font-bold">Model</div>
+                    <div className="text-xs text-zinc-400 font-mono truncate">{agent.model || 'Not set'}</div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            {/* Actions */}
-            <div className="mt-auto flex flex-col gap-2">
+              {/* Actions */}
+              <div className="mt-auto flex flex-col gap-2">
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => openModal('testConsole', agent)}
@@ -115,6 +127,7 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
               >
                 <Trash2 className="w-3 h-3" /> Delete Agent
               </button>
+              </div>
             </div>
           </div>
         ))}
