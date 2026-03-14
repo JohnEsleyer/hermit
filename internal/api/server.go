@@ -27,6 +27,75 @@ import (
 
 var distFS embed.FS
 
+var modelContextWindowSize = map[string]int{
+	"gpt-4o":                               128000,
+	"gpt-4o-2024-05-13":                    128000,
+	"gpt-4o-2024-08-27":                    128000,
+	"gpt-4o-mini":                          128000,
+	"gpt-4o-mini-2024-07-18":               128000,
+	"gpt-4-turbo":                          128000,
+	"gpt-4-turbo-2024-04-09":               128000,
+	"gpt-4":                                8192,
+	"gpt-4-32k":                            32768,
+	"gpt-3.5-turbo":                        16385,
+	"gpt-3.5-turbo-0125":                   16385,
+	"claude-3-5-sonnet":                    200000,
+	"claude-3-5-sonnet-20241022":           200000,
+	"claude-3-5-haiku":                     200000,
+	"claude-3-opus":                        200000,
+	"claude-3-sonnet":                      200000,
+	"claude-3-haiku":                       200000,
+	"claude-2.1":                           200000,
+	"claude-2.0":                           100000,
+	"claude-instant":                       100000,
+	"gemini-1.5-pro":                       200000,
+	"gemini-1.5-pro-002":                   200000,
+	"gemini-1.5-flash":                     1000000,
+	"gemini-1.5-flash-002":                 1000000,
+	"gemini-1.0-pro":                       32768,
+	"gemini-pro":                           32768,
+	"openai/gpt-4":                         8192,
+	"openai/gpt-4-turbo":                   128000,
+	"openai/gpt-4o":                        128000,
+	"openai/gpt-4o-mini":                   128000,
+	"openai/gpt-3.5-turbo":                 16385,
+	"anthropic/claude-3.5-sonnet":          200000,
+	"anthropic/claude-3.5-sonnet-20241022": 200000,
+	"anthropic/claude-3-opus":              200000,
+	"anthropic/claude-3-sonnet":            200000,
+	"anthropic/claude-3-haiku":             200000,
+	"google/gemini-1.5-pro":                200000,
+	"google/gemini-1.5-flash":              1000000,
+	"meta-llama/llama-3.1-405b-instruct":   128000,
+	"meta-llama/llama-3.1-70b-instruct":    128000,
+	"meta-llama/llama-3.1-8b-instruct":     128000,
+	"meta-llama/llama-3-70b-instruct":      8192,
+	"meta-llama/llama-3-8b-ininst":         8192,
+}
+
+func getModelContextWindow(model string) int {
+	modelLower := strings.ToLower(model)
+	if size, ok := modelContextWindowSize[model]; ok {
+		return size
+	}
+	if size, ok := modelContextWindowSize[modelLower]; ok {
+		return size
+	}
+	for key, size := range modelContextWindowSize {
+		if strings.Contains(modelLower, strings.ToLower(key)) {
+			return size
+		}
+	}
+	return 128000
+}
+
+type AgentStats struct {
+	WordCount     int `json:"wordCount"`
+	TokenEstimate int `json:"tokenEstimate"`
+	ContextWindow int `json:"contextWindow"`
+	HistoryCount  int `json:"historyCount"`
+}
+
 type Server struct {
 	db      *db.DB
 	ws      *workspace.Workspace
@@ -99,6 +168,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Delete("/agents/:id", s.HandleDeleteAgent)
 	api.Post("/agents/:id/action", s.HandleAgentAction)
 	api.Get("/agents/:id/logs", s.HandleGetAgentLogs)
+	api.Get("/agents/:id/stats", s.HandleGetAgentStats)
 
 	api.Get("/skills", s.HandleListSkills)
 	api.Post("/skills", s.HandleCreateSkill)
@@ -874,6 +944,47 @@ func (s *Server) HandleGetAgentLogs(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	history, _ := s.db.GetHistory(id, 100)
 	return c.JSON(history)
+}
+
+func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	agent, err := s.db.GetAgent(id)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "agent not found"})
+	}
+
+	history, err := s.db.GetHistory(id, 1000)
+	if err != nil {
+		history = []*db.HistoryEntry{}
+	}
+
+	totalWords := 0
+	for _, h := range history {
+		words := len(strings.Fields(h.Content))
+		totalWords += words
+	}
+
+	contextPath := fmt.Sprintf("data/agents/%d/context.md", id)
+	if data, err := os.ReadFile(contextPath); err == nil {
+		contextWords := len(strings.Fields(string(data)))
+		totalWords += contextWords
+	}
+
+	tokenEstimate := int(float64(totalWords) / 0.75)
+	contextWindow := getModelContextWindow(agent.Model)
+
+	stats := AgentStats{
+		WordCount:     totalWords,
+		TokenEstimate: tokenEstimate,
+		ContextWindow: contextWindow,
+		HistoryCount:  len(history),
+	}
+
+	return c.JSON(stats)
 }
 
 func (s *Server) HandleListSkills(c *fiber.Ctx) error {

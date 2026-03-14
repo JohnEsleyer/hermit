@@ -15,6 +15,13 @@ export interface Agent {
   telegramToken?: string;
 }
 
+export interface AgentStats {
+  wordCount: number;
+  tokenEstimate: number;
+  contextWindow: number;
+  historyCount: number;
+}
+
 export interface ToastMessage {
   id: number;
   message: string;

@@ -1,5 +1,68 @@
-import { Agent } from '../types';
-import { RefreshCw, Trash2, MessageSquare, Key, FileCode, History } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Agent, AgentStats } from '../types';
+import { RefreshCw, Trash2, MessageSquare, Key, FileCode, History, Cpu } from 'lucide-react';
+
+const API_BASE = '';
+
+function formatNumber(num: number): string {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M';
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K';
+  }
+  return num.toString();
+}
+
+function AgentStatsCard({ agentId }: { agentId: number }) {
+  const [stats, setStats] = useState<AgentStats | null>(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/agents/${agentId}/stats`);
+        const data = await res.json();
+        setStats(data);
+      } catch (err) {
+        console.error('Failed to fetch stats:', err);
+      }
+    };
+    fetchStats();
+  }, [agentId]);
+
+  if (!stats) {
+    return (
+      <div className="flex items-center gap-2 text-zinc-600">
+        <Cpu className="w-3 h-3 animate-pulse" />
+        <span className="text-[10px]">Loading...</span>
+      </div>
+    );
+  }
+
+  const usagePercent = stats.contextWindow > 0 ? (stats.tokenEstimate / stats.contextWindow) * 100 : 0;
+  const isNearLimit = usagePercent > 80;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] font-bold">Context</span>
+        <span className={`text-[10px] font-mono ${isNearLimit ? 'text-orange-400' : 'text-zinc-400'}`}>
+          {formatNumber(stats.tokenEstimate)} / {formatNumber(stats.contextWindow)} tokens
+        </span>
+      </div>
+      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+        <div 
+          className={`h-full transition-all duration-300 ${isNearLimit ? 'bg-orange-500' : 'bg-emerald-500'}`}
+          style={{ width: `${Math.min(usagePercent, 100)}%` }}
+        />
+      </div>
+      <div className="flex justify-between text-[9px] text-zinc-500">
+        <span>{formatNumber(stats.wordCount)} words</span>
+        <span>{stats.historyCount} messages</span>
+      </div>
+    </div>
+  );
+}
 
 interface AgentsTabProps {
   agents: Agent[];
@@ -91,6 +154,7 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
                     <div className="text-xs text-zinc-400 font-mono truncate">{agent.model || 'Not set'}</div>
                   </div>
                 </div>
+                <AgentStatsCard agentId={agent.id} />
               </div>
 
               {/* Actions */}
