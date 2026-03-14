@@ -20,6 +20,7 @@ export interface AgentStats {
   tokenEstimate: number;
   contextWindow: number;
   historyCount: number;
+  estimatedCost: number;
 }
 
 export interface ToastMessage {

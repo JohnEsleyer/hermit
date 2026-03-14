@@ -30,6 +30,11 @@ import (
 
 var distFS embed.FS
 
+type ModelPricing struct {
+	InputPricePerMillion  float64
+	OutputPricePerMillion float64
+}
+
 var modelContextWindowSize = map[string]int{
 	"gpt-4o":                               128000,
 	"gpt-4o-2024-05-13":                    128000,
@@ -76,6 +81,18 @@ var modelContextWindowSize = map[string]int{
 	"meta-llama/llama-3-8b-ininst":         8192,
 }
 
+var geminiPricing = map[string]ModelPricing{
+	"gemini-3.1-pro":        {InputPricePerMillion: 2.00, OutputPricePerMillion: 12.00},
+	"gemini-3.1-flash":      {InputPricePerMillion: 0.25, OutputPricePerMillion: 1.50},
+	"gemini-2.5-pro":        {InputPricePerMillion: 1.25, OutputPricePerMillion: 10.00},
+	"gemini-2.5-flash":      {InputPricePerMillion: 0.30, OutputPricePerMillion: 2.50},
+	"gemini-2.5-flash-lite": {InputPricePerMillion: 0.10, OutputPricePerMillion: 0.40},
+	"gemini-1.5-pro":        {InputPricePerMillion: 1.25, OutputPricePerMillion: 5.00},
+	"gemini-1.5-flash":      {InputPricePerMillion: 0.075, OutputPricePerMillion: 0.30},
+	"gemini-1.0-pro":        {InputPricePerMillion: 0.50, OutputPricePerMillion: 1.50},
+	"gemini-pro":            {InputPricePerMillion: 0.50, OutputPricePerMillion: 1.50},
+}
+
 func getModelContextWindow(model string) int {
 	modelLower := strings.ToLower(model)
 	if size, ok := modelContextWindowSize[model]; ok {
@@ -92,11 +109,30 @@ func getModelContextWindow(model string) int {
 	return 128000
 }
 
+func getGeminiPricing(model string) ModelPricing {
+	modelLower := strings.ToLower(model)
+	for key, pricing := range geminiPricing {
+		if strings.Contains(modelLower, strings.ToLower(key)) {
+			return pricing
+		}
+	}
+	return ModelPricing{InputPricePerMillion: 0.25, OutputPricePerMillion: 1.50}
+}
+
+func calculateTokenCost(tokenCount int, provider, model string) float64 {
+	if strings.Contains(strings.ToLower(provider), "gemini") {
+		pricing := getGeminiPricing(model)
+		return (float64(tokenCount) / 1000000.0) * pricing.InputPricePerMillion
+	}
+	return 0
+}
+
 type AgentStats struct {
-	WordCount     int `json:"wordCount"`
-	TokenEstimate int `json:"tokenEstimate"`
-	ContextWindow int `json:"contextWindow"`
-	HistoryCount  int `json:"historyCount"`
+	WordCount     int     `json:"wordCount"`
+	TokenEstimate int     `json:"tokenEstimate"`
+	ContextWindow int     `json:"contextWindow"`
+	HistoryCount  int     `json:"historyCount"`
+	EstimatedCost float64 `json:"estimatedCost"`
 }
 
 type Server struct {
@@ -1031,11 +1067,14 @@ func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
 		contextWindow = getModelContextWindow(agent.Model)
 	}
 
+	estimatedCost := calculateTokenCost(tokenEstimate, agent.Provider, agent.Model)
+
 	stats := AgentStats{
 		WordCount:     totalWords,
 		TokenEstimate: tokenEstimate,
 		ContextWindow: contextWindow,
 		HistoryCount:  len(history),
+		EstimatedCost: estimatedCost,
 	}
 
 	return c.JSON(stats)

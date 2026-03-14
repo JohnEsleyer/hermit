@@ -42,6 +42,16 @@ function AgentStatsCard({ agentId }: { agentId: number }) {
   const usagePercent = stats.contextWindow > 0 ? (stats.tokenEstimate / stats.contextWindow) * 100 : 0;
   const isNearLimit = usagePercent > 80;
 
+  const formatCost = (cost: number) => {
+    if (cost >= 1) {
+      return '$' + cost.toFixed(2);
+    }
+    if (cost >= 0.01) {
+      return '$' + cost.toFixed(3);
+    }
+    return '$' + cost.toFixed(4);
+  };
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -60,6 +70,12 @@ function AgentStatsCard({ agentId }: { agentId: number }) {
         <span>{formatNumber(stats.wordCount)} words</span>
         <span>{stats.historyCount} messages</span>
       </div>
+      {stats.estimatedCost > 0 && (
+        <div className="flex justify-between items-center pt-1 border-t border-zinc-800/50">
+          <span className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] font-bold">Est. Cost</span>
+          <span className="text-[10px] font-mono text-emerald-400">{formatCost(stats.estimatedCost)}</span>
+        </div>
+      )}
     </div>
   );
 }
