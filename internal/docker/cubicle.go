@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -222,7 +223,7 @@ func (c *Client) collectContainerMetrics() ([]ContainerStats, error) {
 				if onlineCPUs == 0.0 {
 					onlineCPUs = 1.0
 				}
-				
+
 				if systemDelta > 0.0 && cpuDelta > 0.0 {
 					cpuPercent = (cpuDelta / systemDelta) * onlineCPUs * 100.0
 				} else if cpuDelta > 0 {
@@ -253,7 +254,7 @@ func (c *Client) collectContainerMetrics() ([]ContainerStats, error) {
 
 			memUsageMB := float64(usage) / (1024 * 1024)
 			memLimitMB := float64(v.MemoryStats.Limit) / (1024 * 1024)
-			
+
 			// Get created time
 			inspect, _ := c.cli.ContainerInspect(ctx, containerID)
 			created := inspect.Created
@@ -316,10 +317,30 @@ func (c *Client) Run(name, image string, detach bool) error {
 	}
 
 	// 2. Container doesn't exist, create it.
-	// Pull image first
-	_, err = c.cli.ImagePull(ctx, image, types.ImagePullOptions{})
-	if err != nil {
-		return err
+	// Check if image exists locally first (don't pull if local)
+	images, err := c.cli.ImageList(ctx, types.ImageListOptions{
+		All: true,
+	})
+	if err == nil {
+		localImage := false
+		for _, img := range images {
+			for _, tag := range img.RepoTags {
+				if tag == image || tag == image+":latest" {
+					localImage = true
+					break
+				}
+			}
+			if localImage {
+				break
+			}
+		}
+		if !localImage {
+			// Try to pull only if not found locally
+			_, err = c.cli.ImagePull(ctx, image, types.ImagePullOptions{})
+			if err != nil {
+				log.Printf("Warning: failed to pull image %s: %v", image, err)
+			}
+		}
 	}
 
 	resp, err := c.cli.ContainerCreate(ctx, &container.Config{

@@ -46,7 +46,8 @@ export function LogsTab() {
     { id: 'network', name: 'Network', icon: Network },
   ];
 
-  const getCategoryColor = (action: string) => {
+  const getCategoryColor = (action: string | undefined) => {
+    if (!action) return 'text-zinc-400 border-zinc-500/30 bg-zinc-500/10';
     if (action.startsWith('system')) return 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10';
     if (action.startsWith('docker')) return 'text-blue-400 border-blue-500/30 bg-blue-500/10';
     if (action.startsWith('tunnel') || action.startsWith('network')) return 'text-purple-400 border-purple-500/30 bg-purple-500/10';
@@ -55,9 +56,9 @@ export function LogsTab() {
 
   const filteredLogs = search
     ? logs.filter(log => 
-        log.action.toLowerCase().includes(search.toLowerCase()) ||
-        log.details?.toLowerCase().includes(search.toLowerCase()) ||
-        log.user_id?.toLowerCase().includes(search.toLowerCase())
+        (log.action?.toLowerCase() || '').includes(search.toLowerCase()) ||
+        (log.details?.toLowerCase() || '').includes(search.toLowerCase()) ||
+        (log.user_id?.toLowerCase() || '').includes(search.toLowerCase())
       )
     : logs;
 

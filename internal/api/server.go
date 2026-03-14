@@ -62,8 +62,9 @@ func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmC
 		containerStats: make(map[string]docker.ContainerStats),
 	}
 
-	// Set default agent image if not already set
-	if _, err := database.GetSetting("default_agent_image"); err != nil {
+	// Set default agent image if not already set or if it's the old remote image
+	image, err := database.GetSetting("default_agent_image")
+	if err != nil || image == "" || strings.HasPrefix(image, "hermit/") {
 		database.SetSetting("default_agent_image", "hermit-agent:latest")
 	}
 
