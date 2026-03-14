@@ -111,7 +111,8 @@ func (s *Server) setupRoutes(app *fiber.App) {
 
 	api.Get("/metrics", s.HandleMetrics)
 	api.Get("/containers", s.HandleContainers)
-	api.Get("/containers/:id/files", s.HandleContainerFiles)
+	api.Delete("/containers/:id", s.HandleTerminateContainer)
+	api.Post("/containers/:id/action", s.HandleContainerAction)
 
 	api.Get("/settings", s.HandleGetSettings)
 	api.Post("/settings", s.HandleSetSettings)
@@ -262,6 +263,58 @@ func (s *Server) HandleMetrics(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Enrich container data with agent info for full fleet visibility
+	agents, _ := s.db.ListAgents()
+	dockerMap := make(map[string]docker.ContainerStats)
+	for _, cont := range metrics.Containers {
+		dockerMap[cont.Name] = cont
+	}
+
+	var allContainers []interface{}
+	// Add agents (running or not)
+	for _, a := range agents {
+		contName := a.ContainerID
+		if contName == "" {
+			contName = "agent-" + strings.ToLower(a.Name)
+		}
+		
+		status := "stopped"
+		var cpu, mem float64
+		if stats, ok := dockerMap[contName]; ok {
+			status = "running"
+			cpu = stats.CPUPercent
+			mem = stats.MemUsageMB
+		}
+
+		allContainers = append(allContainers, fiber.Map{
+			"name":       contName,
+			"agentName":  a.Name,
+			"status":     status,
+			"cpuPercent": cpu,
+			"memUsageMB": mem,
+		})
+	}
+
+	// Add other system containers
+	for _, cont := range metrics.Containers {
+		isAgent := false
+		for _, a := range agents {
+			if cont.Name == a.ContainerID || cont.Name == "agent-"+strings.ToLower(a.Name) {
+				isAgent = true
+				break
+			}
+		}
+		if !isAgent {
+			allContainers = append(allContainers, fiber.Map{
+				"name":       cont.Name,
+				"agentName":  "System",
+				"status":     "active",
+				"cpuPercent": cont.CPUPercent,
+				"memUsageMB": cont.MemUsageMB,
+			})
+		}
+	}
+
 	domainMode, _ := s.db.GetSetting("domain_mode")
 	tunnelURL := ""
 	if domainMode != "true" {
@@ -272,7 +325,7 @@ func (s *Server) HandleMetrics(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"host":       metrics.Host,
-		"containers": metrics.Containers,
+		"containers": allContainers,
 		"tunnelURL":  tunnelURL,
 		"domain":     domain,
 		"domainMode": domainMode == "true",
@@ -559,6 +612,13 @@ func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true})
 }
 
+func (s *Server) HandleDeleteAgent(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	s.db.DeleteAgent(id)
+	s.db.DeleteTunnelByAgentID(id)
+	return c.JSON(fiber.Map{"success": true})
+}
+
 func (s *Server) HandleImageUpload(c *fiber.Ctx) error {
 	file, err := c.FormFile("image")
 	if err != nil {
@@ -587,10 +647,70 @@ func (s *Server) HandleImageUpload(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"url": "/data/image/" + filename})
 }
 
-func (s *Server) HandleDeleteAgent(c *fiber.Ctx) error {
-	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	s.db.DeleteAgent(id)
-	s.db.DeleteTunnelByAgentID(id)
+func (s *Server) HandleTerminateContainer(c *fiber.Ctx) error {
+	containerID := c.Params("id")
+	if s.docker != nil {
+		s.docker.Stop(containerID)
+		s.docker.Remove(containerID)
+	}
+	
+	// Also mark associated agent as standby if found
+	agents, _ := s.db.ListAgents()
+	for _, a := range agents {
+		if a.ContainerID == containerID {
+			a.Status = "standby"
+			s.db.UpdateAgent(a)
+			break
+		}
+	}
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleContainerAction(c *fiber.Ctx) error {
+	containerID := c.Params("id")
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid body"})
+	}
+
+	if s.docker == nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Docker not available"})
+	}
+
+	switch req.Action {
+	case "start":
+		// Find agent to get image
+		var image = "hermit/python:latest"
+		agents, _ := s.db.ListAgents()
+		for _, a := range agents {
+			if a.ContainerID == containerID || containerID == "agent-"+strings.ToLower(a.Name) {
+				// Ensure starting
+				s.docker.Run(containerID, image, true)
+				a.Status = "running"
+				s.db.UpdateAgent(a)
+				break
+			}
+		}
+	case "stop":
+		s.docker.Stop(containerID)
+		agents, _ := s.db.ListAgents()
+		for _, a := range agents {
+			if a.ContainerID == containerID || containerID == "agent-"+strings.ToLower(a.Name) {
+				a.Status = "stopped"
+				s.db.UpdateAgent(a)
+				break
+			}
+		}
+	case "reset":
+		s.docker.Stop(containerID)
+		s.docker.Remove(containerID)
+		image := "hermit/python:latest"
+		s.docker.Run(containerID, image, true)
+	}
+
 	return c.JSON(fiber.Map{"success": true})
 }
 
@@ -606,17 +726,29 @@ func (s *Server) HandleAgentAction(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
 	}
 
+	containerName := agent.ContainerID
+	if containerName == "" {
+		containerName = "agent-" + strings.ToLower(agent.Name)
+	}
+
 	switch req.Action {
 	case "start":
+		if s.docker != nil && !s.docker.IsRunning(containerName) {
+			s.docker.Run(containerName, "hermit/python:latest", true)
+		}
 		agent.Status = "running"
 	case "stop":
+		if s.docker != nil {
+			s.docker.Stop(containerName)
+		}
 		agent.Status = "stopped"
 	case "reset":
 		if s.docker != nil {
-			s.docker.Stop(agent.ContainerID)
-			s.docker.Remove(agent.ContainerID)
+			s.docker.Stop(containerName)
+			s.docker.Remove(containerName)
+			s.docker.Run(containerName, "hermit/python:latest", true)
 		}
-		agent.Status = "standby"
+		agent.Status = "running"
 	}
 
 	s.db.UpdateAgent(agent)

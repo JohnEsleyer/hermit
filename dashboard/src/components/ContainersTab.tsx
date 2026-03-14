@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Trash2, HardDrive, RefreshCw, Cpu, Database, Activity } from 'lucide-react';
+import { Box, Trash2, HardDrive, RefreshCw } from 'lucide-react';
 import { ContainerItem } from '../types';
 
 const API_BASE = '';
@@ -47,6 +47,33 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
       fetchContainers();
     } catch (err) {
       triggerToast('Failed to reset container', 'error');
+    }
+  };
+
+  const handleAction = async (container: ContainerItem, action: 'start' | 'stop') => {
+    try {
+      await fetch(`${API_BASE}/api/containers/${container.id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      triggerToast(`Container ${action} initiated`);
+      fetchContainers();
+    } catch (err) {
+      triggerToast(`Failed to ${action} container`, 'error');
+    }
+  };
+
+  const terminateContainer = async (container: ContainerItem) => {
+    if (!confirm(`PERMANENT DELETION: Are you sure you want to terminate ${container.agentName}'s container? All workspace data in this container will be permanently erased.`)) return;
+    try {
+      await fetch(`${API_BASE}/api/containers/${container.id}`, {
+        method: 'DELETE'
+      });
+      triggerToast('Container terminated permanently');
+      fetchContainers();
+    } catch (err) {
+      triggerToast('Failed to terminate container', 'error');
     }
   };
 
@@ -111,6 +138,7 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
                     <span className={`w-2 h-2 rounded-full ${container.status === 'running' ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
                     <span className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest">{container.status}</span>
                   </div>
+                  <div className="text-[10px] text-zinc-600 font-mono mt-1 opacity-50 truncate">{container.id}</div>
                 </div>
               </div>
 
@@ -150,15 +178,33 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
                   >
                     <HardDrive className="w-3.5 h-3.5" /> Workspace
                   </button>
-                  <button
-                    onClick={() => handleReset(container)}
-                    className="flex-1 h-12 bg-zinc-900 text-white hover:bg-white hover:text-black rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 border border-zinc-800"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" /> Reset
-                  </button>
+                  <div className="flex gap-2">
+                    {container.status === 'running' ? (
+                      <button
+                        onClick={() => handleAction(container, 'stop')}
+                        className="flex-1 h-12 bg-zinc-900 text-red-500 hover:bg-red-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center border border-zinc-800"
+                      >
+                        Stop
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleAction(container, 'start')}
+                        className="flex-1 h-12 bg-zinc-900 text-emerald-500 hover:bg-emerald-500 hover:text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center border border-zinc-800"
+                      >
+                        Start
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleReset(container)}
+                      className="w-12 h-12 bg-zinc-900 text-white hover:bg-white hover:text-black rounded-xl text-xs font-bold transition-all flex items-center justify-center border border-zinc-800"
+                      title="Reset Container"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
                 <button
-                  onClick={() => triggerToast('Permanent deletion of containers is managed via Agent Dashboard', 'info')}
+                  onClick={() => terminateContainer(container)}
                   className="w-full h-10 rounded-xl text-[10px] font-bold text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-all border border-red-500/10 flex items-center justify-center gap-2 uppercase tracking-widest"
                 >
                   <Trash2 className="w-3 h-3" /> Terminate Container
