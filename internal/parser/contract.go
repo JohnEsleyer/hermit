@@ -30,7 +30,7 @@ func activeZone(text string) string {
 	if idx == -1 {
 		return text
 	}
-	return text[idx+len("<end>"):]
+	return text[:idx]
 }
 
 var (

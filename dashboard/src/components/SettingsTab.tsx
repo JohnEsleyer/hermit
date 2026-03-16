@@ -10,15 +10,43 @@ interface SettingsTabProps {
 
 export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
   const [mode, setMode] = useState<'tunnel' | 'domain'>('tunnel');
+  const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
     domainMode: false,
     domain: '',
     tunnelURL: '',
     tunnelHealthy: false,
-    timezone: 'Asia/Manila',
+    timezone: 'UTC',
+    timeOffset: '0',
     hasLLMKey: false,
+    currentTime: '',
+    currentTime12: '',
+    currentDate: '',
   });
   const [saving, setSaving] = useState(false);
+  
+  // Real local time (from browser)
+  const [localTime, setLocalTime] = useState('');
+  
+  // Update local time every second
+  useEffect(() => {
+    const updateLocalTime = () => {
+      const now = new Date();
+      setLocalTime(now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }));
+    };
+    updateLocalTime();
+    const interval = setInterval(updateLocalTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate preview time based on selected offset
+  const getPreviewTime = () => {
+    const now = new Date();
+    const offset = parseInt(settings.timeOffset || '0');
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+    const preview = new Date(utc + (3600000 * offset));
+    return preview.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+  };
   const [apiKeys, setApiKeys] = useState({
     openrouterKey: '',
     openaiKey: '',
@@ -39,10 +67,23 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
   });
 
   const fetchSettings = async () => {
+    setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/settings`);
-      const data = await res.json();
-      setSettings(data);
+      const [settingsRes, timeRes] = await Promise.all([
+        fetch(`${API_BASE}/api/settings`),
+        fetch(`${API_BASE}/api/time`),
+      ]);
+      const data = await settingsRes.json();
+      const timeData = await timeRes.json();
+      
+      setSettings({
+        ...data,
+        timezone: data.timezone || 'UTC',
+        timeOffset: data.timeOffset || '0',
+        currentTime: timeData.time || '',
+        currentTime12: timeData.time12 || '',
+        currentDate: timeData.date || '',
+      });
       setMode(data.domainMode ? 'domain' : 'tunnel');
 
       setHasApiKeys({
@@ -59,6 +100,8 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
       });
     } catch (err) {
       console.error('Failed to fetch settings:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -73,6 +116,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
         domainMode: mode === 'domain' ? 'true' : 'false',
         domain: settings.domain,
         timezone: settings.timezone,
+        timeOffset: settings.timeOffset,
         ...specificKeys
       };
 
@@ -266,30 +310,116 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
       </div>
 
       <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-8">
-        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">Time Zone</h2>
-        <div>
-          <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">System Time Zone</label>
-          <div className="flex gap-4">
-            <select
-              value={settings.timezone}
-              onChange={e => setSettings({ ...settings, timezone: e.target.value })}
-              className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-zinc-600"
-            >
-              <option value="Asia/Manila">Asia/Manila (PHT)</option>
-              <option value="America/New_York">America/New York (EST)</option>
-              <option value="America/Los_Angeles">America/Los Angeles (PST)</option>
-              <option value="Europe/London">Europe/London (GMT)</option>
-              <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-            </select>
+        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">System Time</h2>
+        
+        {loading ? (
+          <div className="space-y-6">
+            <div className="bg-zinc-900/50 rounded-2xl p-6 border border-zinc-800">
+              <div className="animate-pulse space-y-4">
+                <div className="h-8 bg-zinc-800 rounded w-32"></div>
+                <div className="h-12 bg-zinc-800 rounded w-48"></div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Preview Cards */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Your Local Time (what you expect) */}
+              <div className="bg-emerald-500/10 rounded-2xl p-6 border border-emerald-500/30">
+                <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1">Your Local Time</div>
+                <div className="text-4xl font-mono font-bold text-emerald-400">
+                  {localTime}
+                </div>
+                <div className="text-sm text-emerald-400/70 mt-1">
+                  Your computer
+                </div>
+              </div>
+              
+              {/* System Time (preview based on selected offset) */}
+              <div className="bg-blue-500/10 rounded-2xl p-6 border border-blue-500/30">
+                <div className="text-xs text-blue-400 uppercase tracking-wider mb-1">Preview (after offset)</div>
+                <div className="text-4xl font-mono font-bold text-blue-400">
+                  {getPreviewTime()}
+                </div>
+                <div className="text-sm text-blue-400/70 mt-1">
+                  UTC{parseInt(settings.timeOffset || '0') >= 0 ? '+' : ''}{settings.timeOffset || 0}h offset
+                </div>
+              </div>
+            </div>
+
+            {/* Offset Selection */}
+            <div>
+              <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-3">
+                Select your timezone offset from UTC
+              </label>
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: 'UTC', value: '0', desc: 'London' },
+                  { label: '+8h', value: '8', desc: 'Philippines' },
+                  { label: '+9h', value: '9', desc: 'Tokyo' },
+                  { label: '+1h', value: '1', desc: 'Paris' },
+                  { label: '-5h', value: '-5', desc: 'New York' },
+                  { label: '-8h', value: '-8', desc: 'Los Angeles' },
+                  { label: '+5h', value: '5', desc: 'Dubai' },
+                  { label: '+3h', value: '3', desc: 'Moscow' },
+                ].map(preset => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => {
+                      setSettings(s => ({ ...s, timeOffset: preset.value }));
+                    }}
+                    className={`py-3 px-4 rounded-xl text-sm font-medium transition-all ${
+                      settings.timeOffset === preset.value
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                    }`}
+                  >
+                    <div className="font-bold">{preset.label}</div>
+                    <div className="text-xs opacity-70">{preset.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+          <div className="flex justify-between items-center pt-2">
+            <p className="text-xs text-zinc-500">
+              This offset is applied to all scheduled events and the dashboard clock.
+            </p>
             <button
-              onClick={handleSave}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  const res = await fetch(`${API_BASE}/api/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      timeOffset: settings.timeOffset,
+                      timezone: settings.timezone,
+                    }),
+                  });
+                  if (res.ok) {
+                    triggerToast('Time settings saved');
+                    const timeRes = await fetch(`${API_BASE}/api/time`);
+                    const timeData = await timeRes.json();
+                    setSettings(s => ({ ...s, currentTime: timeData.time, currentTime12: timeData.time12, currentDate: timeData.date }));
+                  } else {
+                    triggerToast('Failed to save', 'error');
+                  }
+                } catch (err) {
+                  triggerToast('Failed to save', 'error');
+                }
+                setSaving(false);
+              }}
               disabled={saving}
-              className="bg-zinc-900 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-zinc-800 transition-colors disabled:opacity-50"
+              className="bg-white text-black px-8 py-3 rounded-full text-sm font-bold hover:bg-zinc-200 transition-colors disabled:opacity-50"
             >
-              Save
+              {saving ? 'Saving...' : 'Save Time Settings'}
             </button>
           </div>
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-8">

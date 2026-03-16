@@ -1,3 +1,9 @@
+// Package api provides the HTTP API server for Hermit.
+// Documentation: See /docs folder for detailed guides:
+// - authentication.md: Login, session management, password handling
+// - security-measures.md: Security layers and protections
+// - api-endpoints.md: How to create new endpoints
+// - frontend-backend-communication.md: How React talks to Go backend
 package api
 
 import (
@@ -219,6 +225,9 @@ func (s *Server) Listen(port string) error {
 	return s.app.Listen(":" + port)
 }
 
+// setupRoutes registers all API endpoints with Fiber router.
+// Docs: See docs/api-endpoints.md for how to add new endpoints.
+// Docs: See docs/frontend-backend-communication.md for frontend integration.
 func (s *Server) setupRoutes(app *fiber.App) {
 	api := app.Group("/api")
 
@@ -262,6 +271,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Get("/settings", s.HandleGetSettings)
 	api.Post("/settings", s.HandleSetSettings)
 	api.Get("/settings/domain-status", s.HandleDomainStatus)
+	api.Get("/time", s.HandleGetTime)
 
 	api.Post("/test-contract", s.HandleTestContract)
 
@@ -285,26 +295,71 @@ func (s *Server) setupRoutes(app *fiber.App) {
 }
 
 func (s *Server) HandleServeApp(c *fiber.Ctx) error {
-	agentID := c.Params("agentId")
+	agentID, _ := strconv.ParseInt(c.Params("agentId"), 10, 64)
 	appName := c.Params("appName")
 	file := c.Params("*")
 	if file == "" {
 		file = "index.html"
 	}
 
-	path := filepath.Join("data", "agents", agentID, "workspace", "apps", appName, file)
-	return c.SendFile(path)
+	agent, err := s.db.GetAgent(agentID)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
+	}
+
+	containerName := agent.ContainerID
+	if containerName == "" {
+		containerName = "agent-" + strings.ToLower(agent.Name)
+	}
+
+	containerPath := "/app/workspace/apps/" + appName + "/" + file
+	content, err := s.docker.ReadFile(containerName, containerPath)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "File not found in container"})
+	}
+
+	contentType := "text/plain"
+	if strings.HasSuffix(file, ".html") {
+		contentType = "text/html"
+	} else if strings.HasSuffix(file, ".js") {
+		contentType = "application/javascript"
+	} else if strings.HasSuffix(file, ".css") {
+		contentType = "text/css"
+	} else if strings.HasSuffix(file, ".json") {
+		contentType = "application/json"
+	} else if strings.HasSuffix(file, ".png") {
+		contentType = "image/png"
+	} else if strings.HasSuffix(file, ".jpg") || strings.HasSuffix(file, ".jpeg") {
+		contentType = "image/jpeg"
+	} else if strings.HasSuffix(file, ".svg") {
+		contentType = "image/svg+xml"
+	}
+
+	c.Set("Content-Type", contentType)
+	return c.SendString(content)
 }
 
 func (s *Server) HandleListAgentSkills(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	skills, err := s.db.ListSkills() // Ideally filter by agentId or show all
+	skills, err := s.db.ListSkills()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
-	// Filter global skills + this agent's skills if we had agentId in skill table
 	var result []db.Skill
+
+	agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", id)
+	contextData, err := os.ReadFile(filepath.Join(agentSkillsPath, "context.md"))
+	if err == nil {
+		result = append(result, db.Skill{
+			ID:          -1,
+			AgentID:     id,
+			Title:       "context.md",
+			Description: "Agent personality and context (built-in)",
+			Content:     string(contextData),
+		})
+	}
+
 	for _, sk := range skills {
 		if sk.AgentID == 0 || sk.AgentID == id {
 			result = append(result, *sk)
@@ -321,6 +376,17 @@ func (s *Server) HandleSaveSkill(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
 	skill.AgentID = id
+
+	if skill.ID == -1 && skill.Title == "context.md" {
+		agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", id)
+		os.MkdirAll(agentSkillsPath, 0755)
+		err := os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), []byte(skill.Content), 0644)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+		return c.JSON(fiber.Map{"success": true})
+	}
+
 	var err error
 	if skill.ID > 0 {
 		err = s.db.UpdateSkill(&skill)
@@ -348,6 +414,9 @@ func (s *Server) setupStaticRoutes(app *fiber.App) {
 	})
 }
 
+// HandleLogin processes user authentication.
+// Docs: See docs/authentication.md for login flow and security details.
+// Docs: See docs/security-measures.md for HTTP-only cookie implementation.
 func (s *Server) HandleLogin(c *fiber.Ctx) error {
 	var req struct{ Username, Password string }
 	if err := c.BodyParser(&req); err != nil {
@@ -359,6 +428,8 @@ func (s *Server) HandleLogin(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"success": false, "error": "Invalid credentials"})
 	}
 
+	// Set HTTP-only cookie for session - prevents JavaScript access (XSS protection)
+	// See docs/security-measures.md for security details
 	c.Cookie(&fiber.Cookie{
 		Name:     "session",
 		Value:    fmt.Sprintf("%d", id),
@@ -479,6 +550,17 @@ func (s *Server) HandleMetrics(c *fiber.Ctx) error {
 	})
 }
 
+type LogWithAgent struct {
+	ID        int64  `json:"id"`
+	AgentID   int64  `json:"agent_id"`
+	AgentName string `json:"agent_name"`
+	AgentPic  string `json:"agent_pic"`
+	UserID    string `json:"user_id"`
+	Action    string `json:"action"`
+	Details   string `json:"details"`
+	CreatedAt string `json:"created_at"`
+}
+
 func (s *Server) HandleGetLogs(c *fiber.Ctx) error {
 	category := c.Query("category", "all")
 	limit, _ := strconv.Atoi(c.Query("limit", "100"))
@@ -488,25 +570,60 @@ func (s *Server) HandleGetLogs(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	agents, err := s.db.ListAgents()
+	if err != nil {
+		agents = []*db.Agent{}
+	}
+
+	agentMap := make(map[int64]*db.Agent)
+	for _, a := range agents {
+		agentMap[a.ID] = a
+	}
+
 	typeLogMap := make(map[string]string)
 	typeLogMap["all"] = ""
 	typeLogMap["system"] = "system"
 	typeLogMap["agent"] = "agent"
 	typeLogMap["docker"] = "docker"
-	typeLogMap["network"] = "tunnel"
+	typeLogMap["network"] = "network"
 
 	filteredLogs := logs
 	if cat, ok := typeLogMap[category]; ok && cat != "" {
 		var filtered []*db.AuditLog
+		isNetwork := category == "network"
 		for _, log := range logs {
-			if strings.HasPrefix(log.Action, cat) {
+			if isNetwork {
+				if strings.HasPrefix(log.Action, "network") || strings.HasPrefix(log.Action, "tunnel") {
+					filtered = append(filtered, log)
+				}
+			} else if strings.HasPrefix(log.Action, cat) {
 				filtered = append(filtered, log)
 			}
 		}
 		filteredLogs = filtered
 	}
 
-	return c.JSON(filteredLogs)
+	var response []LogWithAgent
+	for _, log := range filteredLogs {
+		agentName := ""
+		agentPic := ""
+		if agent, ok := agentMap[log.AgentID]; ok {
+			agentName = agent.Name
+			agentPic = agent.ProfilePic
+		}
+		response = append(response, LogWithAgent{
+			ID:        log.ID,
+			AgentID:   log.AgentID,
+			AgentName: agentName,
+			AgentPic:  agentPic,
+			UserID:    log.UserID,
+			Action:    log.Action,
+			Details:   log.Details,
+			CreatedAt: log.CreatedAt,
+		})
+	}
+
+	return c.JSON(response)
 }
 
 func (s *Server) HandleContainers(c *fiber.Ctx) error {
@@ -608,46 +725,45 @@ func (s *Server) HandleContainerFiles(c *fiber.Ctx) error {
 	path := c.Query("path", "/app/workspace")
 
 	agents, _ := s.db.ListAgents()
-	var agentID int64
+	var agent *db.Agent
 	for _, a := range agents {
 		contName := a.ContainerID
 		if contName == "" {
 			contName = "agent-" + strings.ToLower(a.Name)
 		}
 		if contName == containerID {
-			agentID = a.ID
+			agent = a
 			break
 		}
 	}
 
-	if agentID == 0 {
+	if agent == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "agent not found"})
 	}
 
-	hostPath := strings.Replace(path, "/app/workspace", fmt.Sprintf("data/agents/%d/workspace", agentID), 1)
-
-	entries, err := os.ReadDir(hostPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return c.JSON(fiber.Map{"path": path, "files": []interface{}{}})
-		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	containerName := agent.ContainerID
+	if containerName == "" {
+		containerName = "agent-" + strings.ToLower(agent.Name)
 	}
 
-	var files []map[string]interface{}
-	for _, entry := range entries {
-		info, _ := entry.Info()
-		files = append(files, map[string]interface{}{
-			"name":    entry.Name(),
-			"size":    info.Size(),
-			"isDir":   entry.IsDir(),
-			"modTime": info.ModTime().Format("Jan 2 15:04"),
+	files, err := s.docker.ListContainerFiles(containerName, path)
+	if err != nil {
+		return c.JSON(fiber.Map{"path": path, "files": []interface{}{}})
+	}
+
+	var result []map[string]interface{}
+	for _, f := range files {
+		result = append(result, map[string]interface{}{
+			"name":    f.Name,
+			"size":    f.Size,
+			"isDir":   f.IsDir,
+			"modTime": f.ModTime,
 		})
 	}
 
 	return c.JSON(fiber.Map{
 		"path":  path,
-		"files": files,
+		"files": result,
 	})
 }
 
@@ -661,29 +777,38 @@ func (s *Server) HandleContainerDownload(c *fiber.Ctx) error {
 	}
 
 	agents, _ := s.db.ListAgents()
-	var agentID int64
+	var agent *db.Agent
 	for _, a := range agents {
 		contName := a.ContainerID
 		if contName == "" {
 			contName = "agent-" + strings.ToLower(a.Name)
 		}
 		if contName == containerID {
-			agentID = a.ID
+			agent = a
 			break
 		}
 	}
 
-	if agentID == 0 {
+	if agent == nil {
 		return c.Status(404).JSON(fiber.Map{"error": "agent not found"})
 	}
 
-	filePath := filepath.Join(fmt.Sprintf("data/agents/%d/workspace/%s", agentID, folder), filename)
-
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return c.Status(404).JSON(fiber.Map{"error": "file not found"})
+	containerName := agent.ContainerID
+	if containerName == "" {
+		containerName = "agent-" + strings.ToLower(agent.Name)
 	}
 
-	return c.Download(filePath, filename)
+	containerPath := "/app/workspace/" + folder + "/" + filename
+	content, err := s.docker.ReadFile(containerName, containerPath)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "file not found in container"})
+	}
+
+	tmpPath := filepath.Join(os.TempDir(), filename)
+	os.WriteFile(tmpPath, []byte(content), 0644)
+	defer os.Remove(tmpPath)
+
+	return c.Download(tmpPath, filename)
 }
 
 func (s *Server) HandleListAgents(c *fiber.Ctx) error {
@@ -784,15 +909,10 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	// Log agent creation
 	s.db.LogAction(id, "system", "agent_created", fmt.Sprintf("Agent '%s' created with provider=%s, model=%s", a.Name, a.Provider, a.Model))
 
-	// Create agent workspace directories
-	basePath := fmt.Sprintf("data/agents/%d/workspace", id)
-	os.MkdirAll(filepath.Join(basePath, "in"), 0755)
-	os.MkdirAll(filepath.Join(basePath, "out"), 0755)
-	os.MkdirAll(filepath.Join(basePath, "work"), 0755)
-	os.MkdirAll(filepath.Join(basePath, "apps"), 0755)
-
-	// Create a dummy context.md if it doesn't exist
-	os.WriteFile(fmt.Sprintf("data/agents/%d/context.md", id), []byte(a.Personality), 0644)
+	// Create agent-specific skills folder with context.md
+	agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", id)
+	os.MkdirAll(agentSkillsPath, 0755)
+	os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), []byte(a.Personality), 0644)
 
 	// Create and start Docker container for the agent
 	go func() {
@@ -958,8 +1078,10 @@ func (s *Server) HandleTerminateContainer(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true})
 }
 
+// HandleContainerAction manages container lifecycle (start/stop/reset).
+// Docs: See docs/container-management.md for container lifecycle details.
 func (s *Server) HandleContainerAction(c *fiber.Ctx) error {
-	containerID := strings.ToLower(c.Params("id"))
+	containerID := c.Params("id")
 	var req struct {
 		Action string `json:"action"`
 	}
@@ -1097,7 +1219,7 @@ func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
 		history = []*db.HistoryEntry{}
 	}
 
-	contextPath := fmt.Sprintf("data/agents/%d/context.md", id)
+	contextPath := fmt.Sprintf("data/agents/%d/skills/context.md", id)
 	contextData, _ := os.ReadFile(contextPath)
 
 	var totalWords int
@@ -1297,9 +1419,21 @@ func (s *Server) HandleListCalendar(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	agents, err := s.db.ListAgents()
+	if err != nil {
+		agents = []*db.Agent{}
+	}
+
+	agentMap := make(map[int64]*db.Agent)
+	for _, a := range agents {
+		agentMap[a.ID] = a
+	}
+
 	type CalendarResponse struct {
 		ID        int64  `json:"id"`
 		AgentID   int64  `json:"agentId"`
+		AgentName string `json:"agentName"`
+		AgentPic  string `json:"agentPic"`
 		Date      string `json:"date"`
 		Time      string `json:"time"`
 		Prompt    string `json:"prompt"`
@@ -1309,9 +1443,17 @@ func (s *Server) HandleListCalendar(c *fiber.Ctx) error {
 
 	var result []CalendarResponse
 	for _, e := range events {
+		agentName := ""
+		agentPic := ""
+		if agent, ok := agentMap[e.AgentID]; ok {
+			agentName = agent.Name
+			agentPic = agent.ProfilePic
+		}
 		result = append(result, CalendarResponse{
 			ID:        e.ID,
 			AgentID:   e.AgentID,
+			AgentName: agentName,
+			AgentPic:  agentPic,
 			Date:      e.Date,
 			Time:      e.Time,
 			Prompt:    e.Prompt,
@@ -1413,6 +1555,7 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 	anthropicKey, _ := s.db.GetSetting("anthropic_api_key")
 	geminiKey, _ := s.db.GetSetting("gemini_api_key")
 	timezone, _ := s.db.GetSetting("timezone")
+	timeOffset, _ := s.db.GetSetting("time_offset")
 
 	tunnelURL := s.tunnels.GetURL("dashboard")
 	isHealthy := s.tunnels.CheckTunnelHealth("dashboard", 2*time.Second)
@@ -1436,6 +1579,7 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 		"anthropicKey":  anthropicKey != "",
 		"geminiKey":     geminiKey != "",
 		"timezone":      timezone,
+		"timeOffset":    timeOffset,
 		"hasLLMKey":     openrouterKey != "" || openaiKey != "" || anthropicKey != "" || geminiKey != "",
 	})
 }
@@ -1459,6 +1603,7 @@ func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 		AnthropicKey  string `json:"anthropicKey"`
 		GeminiKey     string `json:"geminiKey"`
 		Timezone      string `json:"timezone"`
+		TimeOffset    string `json:"timeOffset"`
 	}
 	c.BodyParser(&req)
 
@@ -1468,36 +1613,12 @@ func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 	if req.Domain != "" {
 		s.db.SetSetting("domain", req.Domain)
 	}
-	if req.OpenrouterKey != "" {
-		val := req.OpenrouterKey
-		if val == "REMOVE" {
-			val = ""
-		}
-		s.db.SetSetting("openrouter_api_key", val)
-	}
-	if req.OpenaiKey != "" {
-		val := req.OpenaiKey
-		if val == "REMOVE" {
-			val = ""
-		}
-		s.db.SetSetting("openai_api_key", val)
-	}
-	if req.AnthropicKey != "" {
-		val := req.AnthropicKey
-		if val == "REMOVE" {
-			val = ""
-		}
-		s.db.SetSetting("anthropic_api_key", val)
-	}
-	if req.GeminiKey != "" {
-		val := req.GeminiKey
-		if val == "REMOVE" {
-			val = ""
-		}
-		s.db.SetSetting("gemini_api_key", val)
-	}
+	// Save timezone and time offset settings
 	if req.Timezone != "" {
 		s.db.SetSetting("timezone", req.Timezone)
+	}
+	if req.TimeOffset != "" {
+		s.db.SetSetting("time_offset", req.TimeOffset)
 	}
 
 	return c.JSON(fiber.Map{"success": true})
@@ -1510,6 +1631,38 @@ func (s *Server) HandleDomainStatus(c *fiber.Ctx) error {
 		"domain":     domain,
 		"configured": domain != "",
 		"message":    "DNS A record should point to this server's IP",
+	})
+}
+
+func (s *Server) HandleGetTime(c *fiber.Ctx) error {
+	timezone, _ := s.db.GetSetting("timezone")
+	timeOffset, _ := s.db.GetSetting("time_offset")
+
+	// Get current UTC time from server
+	currentTime := time.Now().UTC()
+
+	// Apply offset to get user's desired time
+	offsetHours := 0
+	if timeOffset != "" {
+		fmt.Sscanf(timeOffset, "%d", &offsetHours)
+	}
+	currentTime = currentTime.Add(time.Duration(offsetHours) * time.Hour)
+
+	// Note: We don't convert to timezone here because the offset already
+	// represents the user's desired timezone difference from UTC.
+	// The timezone setting is kept for reference but offset is primary.
+
+	// Format time in UTC for consistent display regardless of server timezone
+	utcTime := currentTime.UTC()
+
+	return c.JSON(fiber.Map{
+		"time":       utcTime.Format("03:04:05 PM"),
+		"time12":     utcTime.Format("3:04 PM"),
+		"date":       utcTime.Format("Mon, Jan 2"),
+		"fullDate":   utcTime.Format("2006-01-02"),
+		"datetime":   utcTime.Format(time.RFC3339),
+		"timezone":   timezone,
+		"timeOffset": timeOffset,
 	})
 }
 
@@ -1633,6 +1786,9 @@ func (s *Server) ensureAgentContainer(agent *db.Agent) (string, error) {
 	return containerName, nil
 }
 
+// HandleAgentWebhook receives Telegram updates and processes messages.
+// Docs: See docs/telegram-integration.md for complete Telegram flow.
+// Docs: See docs/security-measures.md for allowlist authorization.
 func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 	agentId, _ := strconv.ParseInt(c.Params("agentId"), 10, 64)
 	agent, err := s.db.GetAgent(agentId)
@@ -2088,16 +2244,20 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 		switch action.Type {
 		case "GIVE":
 			if agentID > 0 && bot != nil {
-				filePath := filepath.Join(fmt.Sprintf("data/agents/%d/workspace/out", agentID), action.Value)
+				containerFilePath := "/app/workspace/out/" + action.Value
 
-				// Create test file if requested and missing
-				if action.Value == "test.txt" {
-					if _, err := os.Stat(filePath); os.IsNotExist(err) {
-						os.WriteFile(filePath, []byte("This is a test file automatically generated by Hermit OS."), 0644)
-					}
+				content, err := s.docker.ReadFile(containerName, containerFilePath)
+				if err != nil {
+					s.db.LogAction(agentID, "system", "action_give_failed", fmt.Sprintf("File: %s, Error: %v", action.Value, err))
+					feedback = append(feedback, map[string]interface{}{"action": "GIVE", "file": action.Value, "status": "FAILED", "error": "File not found in container"})
+					continue
 				}
 
-				err := bot.SendDocument(chatID, filePath, "Requested file: "+action.Value)
+				tmpPath := filepath.Join(os.TempDir(), action.Value)
+				os.WriteFile(tmpPath, []byte(content), 0644)
+				defer os.Remove(tmpPath)
+
+				err = bot.SendDocument(chatID, tmpPath, "Requested file: "+action.Value)
 				status := "SUCCESS"
 				if err != nil {
 					status = "FAILED"
@@ -2110,17 +2270,17 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 			}
 		case "APP":
 			if agentID > 0 && bot != nil {
-				// Verify app directory exists
-				appPath := filepath.Join(fmt.Sprintf("data/agents/%d/workspace/apps", agentID), action.Value)
-				if _, err := os.Stat(appPath); err == nil {
-					publicURL := s.tunnels.GetURL("dashboard") + fmt.Sprintf("/api/apps/%d/%s", agentID, action.Value)
-					bot.SendMessage(chatID, "🚀 App Published! Access it here: "+publicURL)
-					s.db.LogAction(agentID, "system", "action_app", fmt.Sprintf("App: %s, URL: %s", action.Value, publicURL))
-					feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "SUCCESS", "url": publicURL})
-				} else {
-					s.db.LogAction(agentID, "system", "action_app_failed", fmt.Sprintf("App: %s, Error: directory not found", action.Value))
-					feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "FAILED", "error": "App directory not found"})
+				containerPath := "/app/workspace/apps/" + action.Value + "/index.html"
+				_, err := s.docker.ReadFile(containerName, containerPath)
+				if err != nil {
+					s.db.LogAction(agentID, "system", "action_app_failed", fmt.Sprintf("App: %s, Error: directory not found in container", action.Value))
+					feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "FAILED", "error": "App directory not found in container"})
+					continue
 				}
+				publicURL := s.tunnels.GetURL("dashboard") + fmt.Sprintf("/api/apps/%d/%s", agentID, action.Value)
+				bot.SendMessage(chatID, "🚀 App Published! Access it here: "+publicURL)
+				s.db.LogAction(agentID, "system", "action_app", fmt.Sprintf("App: %s, URL: %s", action.Value, publicURL))
+				feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "SUCCESS", "url": publicURL})
 			}
 		case "SKILL":
 			if agentID > 0 {
@@ -2155,10 +2315,43 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 	// 6. Handle Calendar
 	if parsed.Calendar != nil && agentID > 0 {
-		// Parse DateTime or Date/Time
-		// For now simple log to history as mock execution
-		s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Scheduled: %s - %s", parsed.Calendar.DateTime, parsed.Calendar.Prompt))
-		feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "SUCCESS"})
+		// Parse DateTime into date and time components
+		dateTime := parsed.Calendar.DateTime
+		var dateStr, timeStr string
+
+		if dateTime != "" {
+			// Try to parse the datetime - format could be "2025-05-23T05:00:00" or "2025-05-23 05:00:00"
+			if len(dateTime) >= 10 {
+				dateStr = dateTime[:10] // YYYY-MM-DD
+			}
+			// Try different time formats
+			if len(dateTime) >= 19 {
+				timeStr = dateTime[11:16] // HH:MM (for format YYYY-MM-DD HH:MM:SS)
+			} else if len(dateTime) >= 16 {
+				timeStr = dateTime[11:16] // HH:MM (for format YYYY-MM-DDTHH:MM)
+			}
+		}
+
+		// Create the calendar event in the database
+		if dateStr != "" && timeStr != "" {
+			_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
+				AgentID:  agentID,
+				Date:     dateStr,
+				Time:     timeStr,
+				Prompt:   parsed.Calendar.Prompt,
+				Executed: false,
+			})
+			if err != nil {
+				s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Failed: %v", err))
+				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "ERROR", "error": err.Error()})
+			} else {
+				s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Scheduled: %s %s - %s", dateStr, timeStr, parsed.Calendar.Prompt))
+				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "SUCCESS"})
+			}
+		} else {
+			s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Failed: Invalid date/time"))
+			feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "ERROR", "error": "Invalid date/time"})
+		}
 	}
 
 	return feedback

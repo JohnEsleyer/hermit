@@ -102,8 +102,7 @@ Expected pattern:
 
 ## Execution checkpoint model
 
-The runtime uses `<end>` as a checkpoint to prevent re-executing old XML actions.
-Only actionable tags after the latest `<end>` are considered active.
+The runtime uses `<end>` as a checkpoint to prevent re-executing old XML actions. **DO NOT include `<end>` in your responses** - the system will automatically append it when processing your output. Only actionable tags before `<end>` are considered active.
 
 ## Runtime/network awareness
 

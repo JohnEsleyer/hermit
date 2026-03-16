@@ -1,3 +1,10 @@
+// Package db provides database operations for Hermit.
+//
+// Documentation:
+// - authentication.md: User table, password hashing, session management
+// - logging.md: Audit logs (audit_logs table)
+// - container-management.md: Agents table, container_id tracking
+// - security-measures.md: Allowlist and access control
 package db
 
 import (
@@ -304,6 +311,9 @@ func (d *DB) InitDefaultUser() error {
 	return err
 }
 
+// VerifyUser authenticates user by comparing password hash.
+// Docs: See docs/authentication.md for authentication flow.
+// Docs: See docs/security-measures.md for password hashing details.
 func (d *DB) VerifyUser(username, password string) (int64, bool, error) {
 	var id int64
 	var hash string
@@ -367,6 +377,8 @@ func (d *DB) GetUserByID(id int64) (string, bool, error) {
 	return username, mustChange == 1, nil
 }
 
+// LogAction inserts an audit log entry for tracking system events.
+// Docs: See docs/logging.md for log categories and usage patterns.
 func (d *DB) LogAction(agentID int64, userID, action, details string) error {
 	_, err := d.db.Exec(`
 		INSERT INTO audit_logs (agent_id, user_id, action, details)

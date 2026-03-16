@@ -1,6 +1,8 @@
 # Binaries
 hermit
 hermit-cli
+hermit_new
+hermit_test
 *.exe
 *.exe~
 *.dll
@@ -63,6 +65,9 @@ yarn-error.log*
 # Codebase files
 codebase.txt
 textify.yaml
+
+# Test results
+test-results/
 
 # Docker
 *.dockerignore

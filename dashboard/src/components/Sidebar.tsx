@@ -1,4 +1,4 @@
-import { Users, Activity, LayoutGrid, Settings, Box, Calendar, Shield, FileText, ChevronRight } from 'lucide-react';
+import { Users, Activity, LayoutGrid, Settings, Box, Calendar, Shield, FileText, ChevronRight, BookOpen } from 'lucide-react';
 
 interface SidebarProps {
   currentTab: string;
@@ -14,7 +14,8 @@ export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
     { id: 'containers', name: 'Containers', icon: Box, description: 'Docker containers' },
     { id: 'logs', name: 'Logs', icon: FileText, description: 'System & agent logs' },
     { id: 'calendar', name: 'Calendar', icon: Calendar, description: 'Scheduled events' },
-    { id: 'allowlist', name: 'Allowed Users', icon: Shield, description: 'Telegram access' }
+    { id: 'allowlist', name: 'Allowed Users', icon: Shield, description: 'Telegram access' },
+    { id: 'docs', name: 'Docs', icon: BookOpen, description: 'Documentation & guides' }
   ];
 
   return (

@@ -1,3 +1,8 @@
+// Hermit Dashboard - React Frontend
+// Documentation:
+// - frontend-deployment.md: Build process, Vite configuration
+// - frontend-backend-communication.md: API calls, authentication flow
+// - authentication.md: Login/logout flow with cookies
 import { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { AgentsTab } from './components/AgentsTab';
@@ -15,9 +20,39 @@ import { LogsModal } from './components/modals/LogsModal';
 import { ConfigureModal } from './components/modals/ConfigureModal';
 import { WorkspaceModal } from './components/modals/WorkspaceModal';
 import { ToastContainer } from './components/ToastContainer';
+import { DocsTab } from './components/DocsTab';
 import { Agent, ToastMessage, ContainerItem } from './types';
+import { Clock } from 'lucide-react';
 
 const API_BASE = '';
+
+function SystemClock() {
+  const [time, setTime] = useState({ time: '', time12: '', date: '', timezone: '', timeOffset: '' });
+
+  useEffect(() => {
+    const fetchTime = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/time`);
+        const data = await res.json();
+        setTime(data);
+      } catch (err) {
+        console.error('Failed to fetch time:', err);
+      }
+    };
+
+    fetchTime();
+    const interval = setInterval(fetchTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 bg-zinc-900/50 rounded-full border border-zinc-800">
+      <Clock className="w-4 h-4 text-zinc-400" />
+      <span className="text-sm font-mono text-white">{time.time}</span>
+      <span className="text-xs text-zinc-400">{time.date}</span>
+    </div>
+  );
+}
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState('agents');
@@ -138,6 +173,7 @@ export default function App() {
                  currentTab === 'logs' ? 'system logs' : 
                  currentTab === 'calendar' ? 'calendar' :
                  currentTab === 'allowlist' ? 'allowed users' :
+                 currentTab === 'docs' ? 'documentation' :
                  currentTab === 'settings' ? 'settings' : ''}
               </h1>
               <div className="flex items-center gap-3 mt-4 text-sm font-medium text-zinc-500">
@@ -146,15 +182,19 @@ export default function App() {
               </div>
             </div>
             
-            {currentTab === 'agents' && (
-              <button 
-                onClick={() => openModal('createAgent')}
-                className="bg-white text-black px-8 py-4 rounded-full font-bold text-sm hover:scale-105 transition-all flex items-center gap-2"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-                deploy new agent
-              </button>
-            )}
+            <div className="flex items-center gap-4">
+              <SystemClock />
+              
+              {currentTab === 'agents' && (
+                <button 
+                  onClick={() => openModal('createAgent')}
+                  className="bg-white text-black px-8 py-4 rounded-full font-bold text-sm hover:scale-105 transition-all flex items-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  deploy new agent
+                </button>
+              )}
+            </div>
           </header>
 
           {currentTab === 'agents' && <AgentsTab agents={agents} openModal={openModal} triggerToast={triggerToast} fetchAgents={fetchAgents} />}
@@ -164,6 +204,7 @@ export default function App() {
           {currentTab === 'logs' && <LogsTab />}
           {currentTab === 'calendar' && <CalendarTab triggerToast={triggerToast} agents={agents} />}
           {currentTab === 'allowlist' && <AllowlistTab triggerToast={triggerToast} />}
+          {currentTab === 'docs' && <DocsTab />}
           {currentTab === 'settings' && <SettingsTab triggerToast={triggerToast} onLogout={handleLogout} />}
         </div>
       </main>

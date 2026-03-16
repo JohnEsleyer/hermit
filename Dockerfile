@@ -13,9 +13,6 @@ RUN mkdir -p /app/workspace/work \
     /app/workspace/out \
     /app/workspace/apps
 
-RUN touch /app/workspace/calendar.db && \
-    chmod 644 /app/workspace/calendar.db
-
 ENV PYTHONUNBUFFERED=1
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8

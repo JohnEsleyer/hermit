@@ -1,3 +1,7 @@
+// Package telegram provides Telegram Bot API integration.
+//
+// Documentation:
+// - telegram-integration.md: Webhooks, commands, message handling
 package telegram
 
 import (

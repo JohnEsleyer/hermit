@@ -1,3 +1,7 @@
+// Package cloudflare provides Cloudflare Tunnel management for public URLs.
+//
+// Documentation:
+// - cloudflared.md: Tunnel creation, health checks, process management
 package cloudflare
 
 import (
@@ -40,6 +44,8 @@ var urlRe = regexp.MustCompile(`https?://[a-zA-Z0-9-]+\.trycloudflare\.com`)
 
 // StartQuickTunnel starts a trycloudflare tunnel for a specific local port and returns the URL.
 // It will periodically restart the tunnel if it exits, maintaining the process.
+//
+// Docs: See docs/cloudflared.md for complete tunnel flow and URL extraction.
 func (m *TunnelManager) StartQuickTunnel(id string, port int) (string, error) {
 	m.mu.Lock()
 	if _, exists := m.processes[id]; exists {

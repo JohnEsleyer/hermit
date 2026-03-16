@@ -1,3 +1,8 @@
+// Package docker provides Docker container management for Hermit agents.
+//
+// Documentation:
+// - container-management.md: Container lifecycle, workspace structure
+// - security-measures.md: Container isolation
 package docker
 
 import (
@@ -303,6 +308,9 @@ func (c *Client) Exec(containerName string, command string) (string, error) {
 	return string(out), nil
 }
 
+// Run creates and starts a Docker container for an agent.
+// Docs: See docs/container-management.md for container lifecycle.
+// Docs: See docs/security-measures.md for container isolation.
 func (c *Client) Run(name, image string, detach bool) error {
 	ctx := context.Background()
 
@@ -414,6 +422,36 @@ type FileInfo struct {
 	Mode    string `json:"mode"`
 	ModTime string `json:"modTime"`
 	IsDir   bool   `json:"isDir"`
+}
+
+func (c *Client) ReadFile(containerName, filePath string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := []string{"sh", "-c", fmt.Sprintf("cat '%s'", filePath)}
+
+	execCfg := types.ExecConfig{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	}
+
+	idResp, err := c.cli.ContainerExecCreate(ctx, containerName, execCfg)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.cli.ContainerExecAttach(ctx, idResp.ID, types.ExecStartCheck{})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Close()
+
+	out, err := io.ReadAll(resp.Reader)
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
 }
 
 func (c *Client) ListContainerFiles(containerName, dir string) ([]FileInfo, error) {
