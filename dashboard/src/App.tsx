@@ -26,6 +26,9 @@ import { Clock } from 'lucide-react';
 
 const API_BASE = '';
 
+// SystemClock displays the current time with user's offset applied.
+// Docs: See docs/time-management.md for how time is fetched and displayed.
+// Purpose: Shows real-time clock in the header using time offset from settings.
 function SystemClock() {
   const [time, setTime] = useState({ time: '', time12: '', date: '', timezone: '', timeOffset: '' });
 

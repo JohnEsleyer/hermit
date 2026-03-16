@@ -39,7 +39,9 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate preview time based on selected offset
+  // Calculate preview time based on selected offset.
+  // Docs: See docs/time-management.md for preview calculation logic.
+  // How it works: Converts local browser time to UTC, then adds offset to preview the result.
   const getPreviewTime = () => {
     const now = new Date();
     const offset = parseInt(settings.timeOffset || '0');
@@ -66,6 +68,9 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     newPassword: '',
   });
 
+  // Fetch settings and current time from backend.
+  // Docs: See docs/time-management.md for time settings persistence.
+  // How it works: Loads time_offset and timezone from API, applies to preview.
   const fetchSettings = async () => {
     setLoading(true);
     try {

@@ -4,6 +4,7 @@
 // - security-measures.md: Security layers and protections
 // - api-endpoints.md: How to create new endpoints
 // - frontend-backend-communication.md: How React talks to Go backend
+// - time-management.md: Time offset settings and display
 package api
 
 import (
@@ -1594,6 +1595,8 @@ func (s *Server) getTunnelStatus(domainMode, healthy bool) string {
 	return "Provisioning..."
 }
 
+// HandleSetSettings saves system settings including timezone and time offset.
+// Docs: See docs/time-management.md for time management flow and persistence.
 func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 	var req struct {
 		DomainMode    string `json:"domainMode"`
@@ -1634,6 +1637,9 @@ func (s *Server) HandleDomainStatus(c *fiber.Ctx) error {
 	})
 }
 
+// HandleGetTime returns the current time with user's offset applied.
+// Docs: See docs/time-management.md for how offset is calculated and applied.
+// Purpose: Allows displaying time in user's desired timezone regardless of server location.
 func (s *Server) HandleGetTime(c *fiber.Ctx) error {
 	timezone, _ := s.db.GetSetting("timezone")
 	timeOffset, _ := s.db.GetSetting("time_offset")
@@ -1642,6 +1648,7 @@ func (s *Server) HandleGetTime(c *fiber.Ctx) error {
 	currentTime := time.Now().UTC()
 
 	// Apply offset to get user's desired time
+	// Formula: displayed_time = server_utc_time + offset
 	offsetHours := 0
 	if timeOffset != "" {
 		fmt.Sscanf(timeOffset, "%d", &offsetHours)
