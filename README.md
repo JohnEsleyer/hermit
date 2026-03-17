@@ -1,32 +1,56 @@
-# Hermit
+# Hermit - AI Agent OS
 
-A lightweight AI agent orchestrator built with Go, designed for efficient VPS environments.
+<p align="center">
+  <img src="docs/images/banner.svg" alt="Hermit AI Agent OS" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/JohnEsleyer/hermit">
+    <img src="https://img.shields.io/badge/Hermit-Agent%20OS-000000?style=for-the-badge&logo=github" alt="Hermit">
+  </a>
+  <a href="https://github.com/JohnEsleyer/hermit/releases">
+    <img src="https://img.shields.io/github/v/release/JohnEsleyer/hermit?style=for-the-badge" alt="Release">
+  </a>
+  <a href="https://gitter.im/hermit-agent-os/community">
+    <img src="https://img.shields.io/gitter/room/JohnEsleyer/hermit?style=for-the-badge" alt="Gitter">
+  </a>
+  <a href="https://docker.io/JohnEsleyer/hermit">
+    <img src="https://img.shields.io/docker/pulls/JohnEsleyer/hermit-agent?style=for-the-badge" alt="Docker Pulls">
+  </a>
+</p>
+
+<p align="center">
+  <b>A lightweight AI agent orchestrator built with Go, designed for efficient VPS environments.</b>
+</p>
+
+---
+
+<p align="center">
+  <img src="docs/images/dashboard-agents.svg" alt="Dashboard - Agents Panel" width="45%">
+  <img src="docs/images/dashboard-health.svg" alt="Dashboard - Health Panel" width="45%">
+</p>
+
+<p align="center">
+  <img src="docs/images/telegram-status.svg" alt="Telegram Status Command" width="45%">
+  <img src="docs/images/agent-chat.svg" alt="Agent Chat Interface" width="45%">
+</p>
+
+---
 
 ## Overview
 
 Hermit provides a complete agentic OS with Docker-based agent containers, Telegram integration, and a web dashboard. Each AI agent runs in its own isolated Docker container with a dedicated workspace.
 
-## Architecture
+### Key Features
 
-```
-hermit/
-├── cmd/
-│   ├── hermit/           # Main application entry point
-│   └── cli/              # Terminal UI interface
-├── internal/
-│   ├── api/              # HTTP Handlers (Dashboard, Webhooks, Telegram)
-│   ├── cloudflare/       # Cloudflare Tunnel integration
-│   ├── db/               # SQLite database layer
-│   ├── docker/           # Docker orchestration (exec, spawn)
-│   ├── llm/              # LLM client (OpenAI, Anthropic, Gemini, OpenRouter)
-│   ├── parser/           # XML contract parser
-│   ├── telegram/         # Bot API and webhook management
-│   └── workspace/        # File I/O operations
-├── dashboard/            # React frontend (Vite + Tailwind)
-├── context.md            # Base agent context template
-├── Dockerfile            # Agent container image definition
-└── hermit               # Compiled binary
-```
+- **🤖 AI Agents**: Autonomous agents with LLM capabilities (OpenAI, Anthropic, Google Gemini, OpenRouter)
+- **📦 Containers**: Isolated Docker workspaces for each agent
+- **💬 Telegram**: User interaction via Telegram Bot API
+- **📅 Scheduler**: Event-driven agent automation with calendar reminders
+- **🌐 Web Apps**: Agents can build and publish web applications
+- **📊 Dashboard**: Real-time monitoring and control panel
+
+---
 
 ## Quick Start
 
@@ -57,41 +81,57 @@ Server starts on port 3000:
 - Dashboard: http://localhost:3000/
 - API: http://localhost:3000/api/
 
-## CLI Interface
+---
 
-Hermit includes a terminal-based interface for managing agents:
-
-```bash
-# Build the CLI
-go build -o hermit-cli ./cmd/cli/
-
-# Run
-./hermit-cli
-```
-
-### Environment Variables
+## Environment Variables
 
 Create a `.env` file (optional):
 
 ```bash
-HERMIT_API_BASE=http://localhost:3000
-HERMIT_CLI_USER=admin
-HERMIT_CLI_PASS=your_password
+# Server Configuration
+PORT=3000
+DATABASE_PATH=./data/hermit.db
+
+# API Keys (configure via dashboard Settings panel)
+OPENROUTER_API_KEY=sk-or-...
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=AIza...
 ```
 
-### Controls
+### CLI Credentials
 
-| Key | Action |
-|-----|--------|
-| `↑/↓` or `j/k` | Navigate agents |
-| `Enter` | View agent details |
-| `r` | Refresh |
-| `q` | Quit |
+```bash
+HERMIT_API_BASE=http://localhost:3000
+HERMIT_CLI_USER=admin
+HERMIT_CLI_PASS=hermit123
+```
 
-The CLI displays:
-- Agent list with status
-- Detailed view with context window, token count, word count
-- Estimated cost (for Gemini models)
+---
+
+## Architecture
+
+```
+hermit/
+├── cmd/
+│   ├── hermit/           # Main application entry point
+│   └── cli/              # Terminal UI interface
+├── internal/
+│   ├── api/              # HTTP Handlers (Dashboard, Webhooks, Telegram)
+│   ├── cloudflare/       # Cloudflare Tunnel integration
+│   ├── db/               # SQLite database layer
+│   ├── docker/           # Docker orchestration (exec, spawn)
+│   ├── llm/              # LLM client (OpenAI, Anthropic, Gemini, OpenRouter)
+│   ├── parser/           # XML contract parser
+│   ├── telegram/         # Bot API and webhook management
+│   └── workspace/        # File I/O operations
+├── dashboard/            # React frontend (Vite + Tailwind)
+├── context.md            # Base agent context template
+├── Dockerfile            # Agent container image definition
+└── hermit               # Compiled binary
+```
+
+---
 
 ## Dashboard Panels
 
@@ -100,14 +140,14 @@ The CLI displays:
 | **Agents** | Create, configure, and manage AI agents |
 | **Containers** | Monitor Docker containers with CPU/Memory stats |
 | **System Health** | Host metrics (CPU, Memory, Disk) |
-| **Logs** | Global system logs (All/System/Agent/Docker/Network) |
-| **Calendar** | Scheduled events for all agents |
-| **Allowed Users** | Telegram user allowlist management |
+| **Published Apps** | Web apps created by agents |
 | **Settings** | API keys, timezone, tunnel/domain mode |
+| **Docs** | Documentation and guides |
 
-## Key Features
+---
 
-### Agent Workspace
+## Agent Workspace
+
 Each agent runs in an isolated Docker container with:
 - `/app/workspace/work/` - Scratch work, scripts, generation
 - `/app/workspace/in/` - User-provided input files
@@ -115,29 +155,84 @@ Each agent runs in an isolated Docker container with:
 - `/app/workspace/apps/` - Published web apps
 - `calendar.db` - Local scheduling database
 
-### Telegram Integration
+---
+
+## Telegram Integration
+
 - Webhook-based message handling
 - Per-agent bot configuration
 - User allowlist security
 - Commands: `/status`, `/help`, `/clear`, `/reset`, `/takeover`
 
-### XML Contract Parser
-Agents use XML tags for actions:
-- `<message>...</message>` - Telegram message bubble
-- `<terminal>...</terminal>` - Shell command execution
-- `<give>filename</give>` - Deliver file from `/app/workspace/out/`
-- `<app name="appname">...</app>` - Create web application
-- `<calendar><datetime>...</datetime><prompt>...</prompt></calendar>` - Schedule reminder
-- `<skill>skill-name</skill>` - Load skill context
-- `<system>time|date|memory</system>` - Request system information
+### Example /status Response
 
-### Docker Orchestration
+```
+🤖 *Agent Status: Rain*
+
+• Model: `gemini-3.1-flash-lite-preview`
+• Provider: `gemini`
+• Context Window: `1048576` tokens
+• LLM API Calls: `42`
+• Container: `agent-rain` (Running ✅)
+• Webhook: Active ✅
+```
+
+---
+
+## XML Contract Parser
+
+Agents use XML tags for actions:
+
+```xml
+<!-- Send message to user -->
+<message>Hello! I've completed your task.</message>
+
+<!-- Execute terminal command -->
+<terminal>ls -la /app/workspace/work</terminal>
+
+<!-- Send file to user -->
+<give>report.pdf</give>
+
+<!-- Create web application -->
+<app name="myapp">
+<html>
+<!DOCTYPE html>
+<html>
+<head><title>My App</title></head>
+<body><h1>Hello World</h1></body>
+</html>
+</html>
+<style>h1 { color: #333; }</style>
+<script>alert('Hello!');</script>
+</app>
+
+<!-- Schedule reminder -->
+<calendar>
+<datetime>2025-05-23T09:00:00</datetime>
+<prompt>Time for daily standup!</prompt>
+</calendar>
+
+<!-- Load skill context -->
+<skill>python-coding</skill>
+
+<!-- Request system information -->
+<system>time</system>
+<system>memory</system>
+```
+
+---
+
+## Docker Orchestration
+
 - Auto-create container on agent creation
 - Auto-start container on telegram message
 - Container reset capability
 - Real-time metrics collection
 
-### Usage Tracking
+---
+
+## Usage Tracking
+
 Each agent tracks:
 - **LLM API Calls**: Number of requests sent to the LLM provider
 - **Context Window**: Maximum token limit for the model
@@ -145,6 +240,8 @@ Each agent tracks:
 - **Estimated Cost**: Cumulative cost estimation based on token usage
 
 These metrics are displayed in the agent card on the dashboard and in the `/status` Telegram command.
+
+---
 
 ## Makefile Commands
 
@@ -159,20 +256,7 @@ These metrics are displayed in the agent card on the dashboard and in the `/stat
 | `make run` | Build and run production server |
 | `make clean` | Remove build artifacts |
 
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| PORT | 3000 | Server port |
-| DATABASE_PATH | ./data/hermit.db | SQLite database path |
-
-API keys are configured through the dashboard Settings panel.
-
-## Authentication
-
-Default credentials:
-- Username: `admin`
-- Password: `hermit123`
+---
 
 ## API Endpoints
 
@@ -181,23 +265,23 @@ Default credentials:
 | `/api/agents` | GET, POST | List/Create agents |
 | `/api/agents/:id` | GET, PUT, DELETE | Agent CRUD |
 | `/api/agents/:id/action` | POST | Start/Stop/Reset container |
+| `/api/agents/:id/stats` | GET | Agent statistics |
 | `/api/containers` | GET | List containers with stats |
-| `/api/containers/:id/action` | POST | Container actions |
 | `/api/metrics` | GET | Host + container metrics |
-| `/api/logs` | GET | System logs with category filter |
 | `/api/settings` | GET, POST | Get/Set settings |
-| `/api/allowlist` | GET, POST, DELETE | Allowed users CRUD |
-| `/api/calendar` | GET, POST | Calendar events |
 | `/api/telegram/verify` | POST | Verify Telegram bot |
-| `/api/images/upload` | POST | Upload agent images |
+| `/api/apps/:id/:name` | GET | Serve agent web apps |
 | `/` | GET | Serve dashboard |
-| `/webhook/:agentId` | POST | Telegram webhook |
+
+---
 
 ## Testing
 
 ```bash
 go test ./... -v
 ```
+
+---
 
 ## License
 

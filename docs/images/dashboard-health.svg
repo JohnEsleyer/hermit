@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <rect width="800" height="500" fill="#09090b"/>
+  <rect x="0" y="0" width="800" height="60" fill="#18181b"/>
+  <circle cx="35" cy="30" r="18" fill="#fff"/>
+  <text x="35" y="35" text-anchor="middle" font-family="Arial" font-size="16" fill="#000" font-weight="bold">H</text>
+  <rect x="70" y="20" width="120" height="20" rx="4" fill="#27272a"/>
+  <text x="80" y="34" font-family="Arial" font-size="11" fill="#a1a1aa">your agents</text>
+  <rect x="200" y="20" width="120" height="20" rx="4" fill="#fff"/>
+  <text x="210" y="34" font-family="Arial" font-size="11" fill="#000" font-weight="bold">system health</text>
+  <rect x="330" y="20" width="120" height="20" rx="4" fill="#27272a"/>
+  <text x="340" y="34" font-family="Arial" font-size="11" fill="#a1a1aa">published apps</text>
+  <rect x="460" y="20" width="120" height="20" rx="4" fill="#27272a"/>
+  <text x="470" y="34" font-family="Arial" font-size="11" fill="#a1a1aa">containers</text>
+  <circle cx="750" cy="30" r="4" fill="#fff">
+    <animate attributeName="opacity" values="1;0.3;1" dur="2s" repeatCount="indefinite"/>
+  </circle>
+  <text x="680" y="34" font-family="Arial" font-size="10" fill="#71717a">live socket connection active</text>
+  <text x="40" y="100" font-family="Arial" font-size="28" fill="#fff" font-weight="bold">system health</text>
+  <rect x="40" y="130" width="165" height="160" rx="24" fill="#18181b" stroke="#3f3f46"/>
+  <rect x="40" y="130" width="165" height="50" rx="24" fill="#f97316"/>
+  <text x="55" y="155" font-family="Arial" font-size="12" fill="#fff">host cpu</text>
+  <text x="55" y="195" font-family="Arial" font-size="36" fill="#fff" font-weight="bold">23.4</text>
+  <text x="140" y="195" font-family="Arial" font-size="18" fill="#fff">%</text>
+  <rect x="220" y="130" width="165" height="160" rx="24" fill="#18181b" stroke="#3f3f46"/>
+  <rect x="220" y="130" width="165" height="50" rx="24" fill="#8b5cf6"/>
+  <text x="235" y="155" font-family="Arial" font-size="12" fill="#fff">host memory</text>
+  <text x="235" y="200" font-family="Arial" font-size="32" fill="#fff" font-weight="bold">4.2</text>
+  <text x="290" y="200" font-family="Arial" font-size="14" fill="#a1a1aa">GB</text>
+  <text x="235" y="225" font-family="Arial" font-size="10" fill="#71717a">of 15.6 GB total</text>
+  <rect x="400" y="130" width="165" height="160" rx="24" fill="#18181b" stroke="#3f3f46"/>
+  <rect x="400" y="130" width="165" height="50" rx="24" fill="#22c55e"/>
+  <text x="415" y="155" font-family="Arial" font-size="12" fill="#fff">storage</text>
+  <text x="415" y="195" font-family="Arial" font-size="36" fill="#fff" font-weight="bold">18.2</text>
+  <text x="490" y="195" font-family="Arial" font-size="18" fill="#fff">GB</text>
+  <rect x="580" y="130" width="165" height="160" rx="24" fill="#18181b" stroke="#3f3f46"/>
+  <rect x="580" y="130" width="165" height="50" rx="24" fill="#06b6d4"/>
+  <text x="595" y="155" font-family="Arial" font-size="12" fill="#fff">network</text>
+  <text x="595" y="195" font-family="Arial" font-size="14" fill="#a1a1aa">live bandwidth</text>
+  <text x="595" y="220" font-family="Arial" font-size="10" fill="#71717a">from docker/host metrics</text>
+  <rect x="40" y="320" width="705" height="120" rx="24" fill="#18181b"/>
+  <text x="60" y="350" font-family="Arial" font-size="16" fill="#fff" font-weight="bold">docker containers</text>
+  <rect x="60" y="370" width="685" height="50" rx="12" fill="#27272a"/>
+  <text x="80" y="400" font-family="Arial" font-size="12" fill="#fff" font-weight="bold">agent-rain</text>
+  <text x="600" y="400" font-family="Arial" font-size="12" fill="#a1a1aa">cpu 2.3%</text>
+  <text x="680" y="400" font-family="Arial" font-size="12" fill="#a1a1aa">mem 128 MB</text>
+</svg>
