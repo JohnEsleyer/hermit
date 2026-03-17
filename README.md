@@ -23,8 +23,8 @@
 ---
 
 <p align="center">
-  <img src="docs/images/dashboard-agents.svg" alt="Dashboard - Agents Panel" width="45%">
-  <img src="docs/images/dashboard-health.svg" alt="Dashboard - Health Panel" width="45%">
+  <img src="docs/images/agents-dashboard.png" alt="Dashboard - Agents Panel" width="45%">
+  <img src="docs/images/system-health-dashboard.png" alt="Dashboard - Health Panel" width="45%">
 </p>
 
 ---
