@@ -9,13 +9,10 @@
     <img src="https://img.shields.io/badge/Hermit-Agent%20OS-000000?style=for-the-badge&logo=github" alt="Hermit">
   </a>
   <a href="https://github.com/JohnEsleyer/hermit/releases">
-    <img src="https://img.shields.io/github/v/release/JohnEsleyer/hermit?style=for-the-badge" alt="Release">
+    <img src="https://img.shields.io/github/v/release/JohnEsleyer/hermit?include_prereleases&style=for-the-badge" alt="Release">
   </a>
-  <a href="https://gitter.im/hermit-agent-os/community">
-    <img src="https://img.shields.io/gitter/room/JohnEsleyer/hermit?style=for-the-badge" alt="Gitter">
-  </a>
-  <a href="https://docker.io/JohnEsleyer/hermit">
-    <img src="https://img.shields.io/docker/pulls/JohnEsleyer/hermit-agent?style=for-the-badge" alt="Docker Pulls">
+  <a href="https://github.com/JohnEsleyer/hermit/stargazers">
+    <img src="https://img.shields.io/github/stars/JohnEsleyer/hermit?style=for-the-badge" alt="Stars">
   </a>
 </p>
 
@@ -28,11 +25,6 @@
 <p align="center">
   <img src="docs/images/dashboard-agents.svg" alt="Dashboard - Agents Panel" width="45%">
   <img src="docs/images/dashboard-health.svg" alt="Dashboard - Health Panel" width="45%">
-</p>
-
-<p align="center">
-  <img src="docs/images/telegram-status.svg" alt="Telegram Status Command" width="45%">
-  <img src="docs/images/agent-chat.svg" alt="Agent Chat Interface" width="45%">
 </p>
 
 ---
