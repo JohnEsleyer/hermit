@@ -2201,6 +2201,9 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 	}
 }
 
+// ExecuteXMLPayload processes parsed XML tags from LLM response.
+// Docs: See docs/xml-tags.md for all supported tags.
+// Handles: <message>, <terminal>, <give>, <app>, <skill>, <calendar>, <thought>, <system>
 func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *telegram.Bot) []map[string]interface{} {
 	parsed := parser.ParseLLMOutput(xmlInput)
 	var feedback []map[string]interface{}
@@ -2249,10 +2252,9 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 		})
 	}
 
-	// 4. Handle Actions (GIVE, APP, SKILL)
+	// 4. Handle <give> tag - Send file to user
 	for _, action := range parsed.Actions {
-		switch action.Type {
-		case "GIVE":
+		if action.Type == "GIVE" {
 			if agentID > 0 && bot != nil {
 				containerFilePath := "/app/workspace/out/" + action.Value
 
@@ -2278,21 +2280,57 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 				}
 				feedback = append(feedback, map[string]interface{}{"action": "GIVE", "file": action.Value, "status": status})
 			}
-		case "APP":
-			if agentID > 0 && bot != nil {
-				containerPath := "/app/workspace/apps/" + action.Value + "/index.html"
-				_, err := s.docker.ReadFile(containerName, containerPath)
-				if err != nil {
-					s.db.LogAction(agentID, "system", "action_app_failed", fmt.Sprintf("App: %s, Error: directory not found in container", action.Value))
-					feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "FAILED", "error": "App directory not found in container"})
-					continue
-				}
-				publicURL := s.tunnels.GetURL("dashboard") + fmt.Sprintf("/api/apps/%d/%s", agentID, action.Value)
-				bot.SendMessage(chatID, "🚀 App Published! Access it here: "+publicURL)
-				s.db.LogAction(agentID, "system", "action_app", fmt.Sprintf("App: %s, URL: %s", action.Value, publicURL))
-				feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "SUCCESS", "url": publicURL})
+		}
+	}
+
+	// 5. Handle <app> tag - Create and publish web app
+	for _, app := range parsed.Apps {
+		if agentID > 0 && bot != nil {
+			// Create app folder and files in container
+			appFolder := "/app/workspace/apps/" + app.Name
+
+			// Create index.html
+			htmlContent := app.HTML
+			if htmlContent == "" {
+				htmlContent = "<!DOCTYPE html><html><head><title>" + app.Name + "</title></head><body><h1>" + app.Name + "</h1></body></html>"
 			}
-		case "SKILL":
+
+			// Build index.html with embedded CSS and JS if provided
+			indexHTML := htmlContent
+			if app.CSS != "" {
+				indexHTML = strings.Replace(indexHTML, "</head>", "<style>"+app.CSS+"</style></head>", 1)
+			}
+			if app.JS != "" {
+				indexHTML = strings.Replace(indexHTML, "</body>", "<script>"+app.JS+"</script></body>", 1)
+			}
+
+			// Create folder and files
+			mkdirCmd := "mkdir -p " + appFolder
+			s.docker.Exec(containerName, mkdirCmd)
+
+			// Write index.html
+			writeIndexCmd := fmt.Sprintf("echo '%s' > %s/index.html", strings.ReplaceAll(indexHTML, "'", "'\\''"), appFolder)
+			s.docker.Exec(containerName, writeIndexCmd)
+
+			// Log the action
+			s.db.LogAction(agentID, "system", "action_app_created", fmt.Sprintf("App: %s created", app.Name))
+
+			// Generate public URL
+			publicURL := s.tunnels.GetURL("dashboard") + fmt.Sprintf("/api/apps/%d/%s", agentID, app.Name)
+			bot.SendMessage(chatID, "🚀 App Created: "+app.Name+"\n\nAccess it here: "+publicURL)
+
+			feedback = append(feedback, map[string]interface{}{
+				"action": "APP",
+				"app":    app.Name,
+				"status": "SUCCESS",
+				"url":    publicURL,
+			})
+		}
+	}
+
+	// 6. Handle Actions (SKILL)
+	for _, action := range parsed.Actions {
+		if action.Type == "SKILL" {
 			if agentID > 0 {
 				skillName := action.Value
 				if !strings.HasSuffix(skillName, ".md") {
@@ -2312,7 +2350,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 		}
 	}
 
-	// 5. Handle System
+	// 7. Handle System
 	if parsed.System == "time" {
 		feedback = append(feedback, map[string]interface{}{"system": "time", "value": time.Now().Format(time.RFC3339)})
 	} else if parsed.System == "memory" {
@@ -2323,26 +2361,23 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 		}
 	}
 
-	// 6. Handle Calendar
+	// 8. Handle Calendar
 	if parsed.Calendar != nil && agentID > 0 {
 		// Parse DateTime into date and time components
 		dateTime := parsed.Calendar.DateTime
 		var dateStr, timeStr string
 
 		if dateTime != "" {
-			// Try to parse the datetime - format could be "2025-05-23T05:00:00" or "2025-05-23 05:00:00"
 			if len(dateTime) >= 10 {
-				dateStr = dateTime[:10] // YYYY-MM-DD
+				dateStr = dateTime[:10]
 			}
-			// Try different time formats
 			if len(dateTime) >= 19 {
-				timeStr = dateTime[11:16] // HH:MM (for format YYYY-MM-DD HH:MM:SS)
+				timeStr = dateTime[11:16]
 			} else if len(dateTime) >= 16 {
-				timeStr = dateTime[11:16] // HH:MM (for format YYYY-MM-DDTHH:MM)
+				timeStr = dateTime[11:16]
 			}
 		}
 
-		// Create the calendar event in the database
 		if dateStr != "" && timeStr != "" {
 			_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
 				AgentID:  agentID,
