@@ -97,6 +97,8 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
   const [events, setEvents] = useState<CalendarEventWithAgent[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showEventDetails, setShowEventDetails] = useState<CalendarEventWithAgent | null>(null);
+  const [showDateEvents, setShowDateEvents] = useState<Date | null>(null);
+  const [selectedDateForNew, setSelectedDateForNew] = useState<string>('');
   const [newEvent, setNewEvent] = useState({ agentId: 0, date: '', time: '09:00', prompt: '' });
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -194,7 +196,24 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
 
   const openCreateForDate = (date: Date) => {
     const dateStr = date.toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
-    setNewEvent({ ...newEvent, date: dateStr });
+    const dayEvents = getEventsForDate(date);
+    
+    if (dayEvents.length > 0) {
+      setShowDateEvents(date);
+    } else {
+      setNewEvent({ ...newEvent, date: dateStr });
+      setSelectedDateForNew(dateStr);
+      setShowCreate(true);
+    }
+  };
+
+  const handleCreateFromDateModal = () => {
+    if (showDateEvents) {
+      const dateStr = showDateEvents.toLocaleDateString('en-CA');
+      setNewEvent({ ...newEvent, date: dateStr });
+      setSelectedDateForNew(dateStr);
+    }
+    setShowDateEvents(null);
     setShowCreate(true);
   };
 
@@ -454,6 +473,69 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showDateEvents && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-6">
+          <div className="bg-zinc-950 border border-zinc-800 w-full max-w-lg rounded-[2.5rem] p-8 max-h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="text-2xl font-bold">
+                  {showDateEvents.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </h3>
+                <p className="text-sm text-zinc-500">{getEventsForDate(showDateEvents).length} events</p>
+              </div>
+              <button onClick={() => setShowDateEvents(null)} className="p-2 hover:bg-zinc-800 rounded-full">
+                <X className="w-5 h-5 text-zinc-400" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-3 mb-6">
+              {getEventsForDate(showDateEvents)
+                .sort((a, b) => a.time.localeCompare(b.time))
+                .map(event => (
+                  <div
+                    key={event.id}
+                    onClick={() => {
+                      setShowDateEvents(null);
+                      setShowEventDetails(event);
+                    }}
+                    className={`p-4 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] ${
+                      event.executed
+                        ? 'bg-zinc-900/50 border-zinc-800'
+                        : 'bg-blue-500/5 border-blue-500/20 hover:border-blue-500/40'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <ProfilePic src={event.agentPic} name={event.agentName} size="md" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Clock className="w-3 h-3 text-zinc-500" />
+                          <span className="text-xs font-mono text-zinc-400">
+                            {formatTime12(event.time)}
+                          </span>
+                          {event.executed && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500">Done</span>
+                          )}
+                        </div>
+                        <p className="text-sm text-zinc-300 line-clamp-2">{event.prompt}</p>
+                        <div className="flex items-center gap-1 mt-2">
+                          <span className="text-[10px] text-zinc-500">by {event.agentName}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            <button
+              onClick={handleCreateFromDateModal}
+              className="w-full bg-white text-black py-3 rounded-full font-bold flex items-center justify-center gap-2 hover:bg-zinc-200 transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Add Event to This Date
+            </button>
           </div>
         </div>
       )}
