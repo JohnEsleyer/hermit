@@ -25,6 +25,9 @@ func (m *TunnelManager) CheckBinary() error {
 	return nil
 }
 
+// TunnelManager manages Cloudflare tunnel processes with concurrency protection.
+// Docs: See docs/concurrency.md for mutex, goroutine, and channel patterns.
+// Purpose: Runs background tunnels, handles graceful shutdown via context.
 type TunnelManager struct {
 	mu        sync.Mutex
 	processes map[string]*exec.Cmd
@@ -46,7 +49,9 @@ var urlRe = regexp.MustCompile(`https?://[a-zA-Z0-9-]+\.trycloudflare\.com`)
 // It will periodically restart the tunnel if it exits, maintaining the process.
 //
 // Docs: See docs/cloudflared.md for complete tunnel flow and URL extraction.
+// Docs: See docs/concurrency.md for mutex protection of shared state.
 func (m *TunnelManager) StartQuickTunnel(id string, port int) (string, error) {
+	// Thread-safe check: lock mutex before accessing shared maps
 	m.mu.Lock()
 	if _, exists := m.processes[id]; exists {
 		url := m.urls[id]

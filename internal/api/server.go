@@ -5,6 +5,7 @@
 // - api-endpoints.md: How to create new endpoints
 // - frontend-backend-communication.md: How React talks to Go backend
 // - time-management.md: Time offset settings and display
+// - concurrency.md: Goroutines, mutexes, and parallel operations
 package api
 
 import (
@@ -169,6 +170,8 @@ type AgentStats struct {
 	EstimatedCost float64 `json:"estimatedCost"`
 }
 
+// Server handles HTTP requests and manages shared state with concurrency protection.
+// Docs: See docs/concurrency.md for mutex and goroutine patterns used.
 type Server struct {
 	db      *db.DB
 	ws      *workspace.Workspace

@@ -3,6 +3,7 @@
 // Documentation:
 // - container-management.md: Container lifecycle, workspace structure
 // - security-measures.md: Container isolation
+// - concurrency.md: RWMutex and background goroutines for metrics
 package docker
 
 import (
@@ -74,6 +75,9 @@ func NewClient() (*Client, error) {
 	return c, nil
 }
 
+// StartMetricsAggregator runs a background goroutine that collects system metrics every second.
+// Docs: See docs/concurrency.md for background goroutine and mutex patterns.
+// How it works: Uses RWMutex to protect cached metrics, updates every 1 second.
 func (c *Client) StartMetricsAggregator() {
 	c.mu.Lock()
 	if c.aggregatorActive {
