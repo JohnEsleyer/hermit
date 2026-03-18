@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/user"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -174,12 +175,16 @@ func runCLI() {
 		fmt.Println("  agents      Manage agents")
 		fmt.Println("  containers  Manage containers")
 		fmt.Println("  tunnel      Get tunnel URL")
+		fmt.Println("  status      Check server status")
+		fmt.Println("  start       Start server service")
+		fmt.Println("  stop        Stop server service")
+		fmt.Println("  restart     Restart server service")
 		fmt.Println("  logout      Logout and clear credentials")
 		fmt.Println("  help        Show this help message")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  hermitshell agents list")
-		fmt.Println("  hermitshell agents create --name rain --model gpt-4")
+		fmt.Println("  hermitshell status")
 		fmt.Println("  hermitshell tunnel")
 	}
 
@@ -199,6 +204,14 @@ func runCLI() {
 		handleContainers(os.Args[2:], containersCmd, containersListCmd)
 	case "tunnel":
 		handleTunnel(tunnelCmd)
+	case "status":
+		handleStatus()
+	case "start":
+		handleService("start")
+	case "stop":
+		handleService("stop")
+	case "restart":
+		handleService("restart")
 	case "help", "-h", "--help":
 		flag.Usage()
 	default:
@@ -385,4 +398,42 @@ func printContainers() {
 		)
 	}
 	w.Flush()
+}
+func handleStatus() {
+	fmt.Println("Checking HermitShell Server status...")
+
+	// Check systemd
+	cmd := exec.Command("systemctl", "is-active", "hermit")
+	output, _ := cmd.Output()
+	systemdStatus := strings.TrimSpace(string(output))
+
+	fmt.Printf("Systemd Service: %s\n", systemdStatus)
+
+	// Check API
+	fmt.Printf("API Endpoint (%s): ", apiBase)
+	resp, err := http.Get(apiBase + "/api/auth/check")
+	if err != nil {
+		fmt.Println("OFFLINE ❌")
+	} else {
+		defer resp.Body.Close()
+		if resp.StatusCode == 200 {
+			fmt.Println("ONLINE ✅")
+		} else {
+			fmt.Printf("ERROR (HTTP %d) ⚠️\n", resp.StatusCode)
+		}
+	}
+}
+
+func handleService(action string) {
+	fmt.Printf("Executing '%s' on hermit service...\n", action)
+	// Use sudo for systemctl actions
+	cmd := exec.Command("sudo", "systemctl", action, "hermit")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("Failed to %s service: %v\n", action, err)
+		os.Exit(1)
+	}
+	fmt.Println("Done.")
 }
