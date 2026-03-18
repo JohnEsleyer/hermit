@@ -61,3 +61,24 @@ func TestParseLLMOutputCalendarDateAndTime(t *testing.T) {
 		t.Fatalf("expected prompt, got %q", parsed.Calendars[0].Prompt)
 	}
 }
+func TestParseLLMOutputAppAndDeploy(t *testing.T) {
+	input := `<app name="my-app"><h1>Hello</h1></app><deploy>my-app</deploy>`
+	parsed := ParseLLMOutput(input)
+
+	if len(parsed.Apps) != 1 {
+		t.Fatalf("expected 1 app, got %d", len(parsed.Apps))
+	}
+	if parsed.Apps[0].Name != "my-app" {
+		t.Fatalf("expected app name my-app, got %q", parsed.Apps[0].Name)
+	}
+	if parsed.Apps[0].HTML != "<h1>Hello</h1>" {
+		t.Fatalf("expected app HTML <h1>Hello</h1>, got %q", parsed.Apps[0].HTML)
+	}
+
+	if len(parsed.Deploys) != 1 {
+		t.Fatalf("expected 1 deploy, got %d", len(parsed.Deploys))
+	}
+	if parsed.Deploys[0] != "my-app" {
+		t.Fatalf("expected deploy my-app, got %q", parsed.Deploys[0])
+	}
+}

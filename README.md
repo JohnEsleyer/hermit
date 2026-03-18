@@ -113,8 +113,8 @@ HERMIT_CLI_PASS=hermit123
 ```
 HermitShell/
 ├── cmd/
-│   ├── hermit/           # Main application entry point
-│   └── cli/              # Terminal UI interface
+│   ├── hermit/           # Server implementation
+│   └── cli/              # hermitshell CLI implementation
 ├── internal/
 │   ├── api/              # HTTP Handlers (Dashboard, Webhooks, Telegram)
 │   ├── cloudflare/       # Cloudflare Tunnel integration
@@ -125,9 +125,8 @@ HermitShell/
 │   ├── telegram/         # Bot API and webhook management
 │   └── workspace/        # File I/O operations
 ├── dashboard/            # React frontend (Vite + Tailwind)
-├── context.md            # Base agent context template
-├── Dockerfile            # Agent container image definition
-└── hermit-server        # Compiled binary
+├── hermit-server        # Main server binary
+└── hermitshell          # CLI tool binary
 ```
 
 ---
@@ -192,18 +191,21 @@ Agents use XML tags for actions:
 <!-- Send file to user -->
 <give>report.pdf</give>
 
-<!-- Create web application -->
+<!-- Create web application files -->
 <app name="myapp">
 <html>
-<!DOCTYPE html>
-<html>
-<head><title>My App</title></head>
-<body><h1>Hello World</h1></body>
+  <h1>Hello World</h1>
 </html>
-</html>
-<style>h1 { color: #333; }</style>
-<script>alert('Hello!');</script>
+<style>
+  h1 { color: #333; }
+</style>
+<script>
+  console.log('App loaded');
+</script>
 </app>
+
+<!-- Deploy and publish the app -->
+<deploy>myapp</deploy>
 
 <!-- Schedule multiple reminders -->
 <calendar>
@@ -281,8 +283,8 @@ These metrics are displayed in the agent card on the dashboard and in the `/stat
 | `/api/containers` | GET | List containers with stats |
 | `/api/metrics` | GET | Host + container metrics |
 | `/api/settings` | GET, POST | Get/Set settings |
-| `/api/telegram/verify` | POST | Verify Telegram bot |
-| `/api/apps/:id/:name` | GET | Serve agent web apps |
+| `/api/agents/:id/apps` | GET | List agent web apps |
+| `/apps/:id/:name` | GET | Serve agent web apps (Public) |
 | `/` | GET | Serve dashboard |
 
 ---

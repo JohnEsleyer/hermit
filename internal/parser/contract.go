@@ -19,6 +19,7 @@ type ParsedResponse struct {
 	Actions   []ParsedAction   `json:"actions"`
 	Calendars []ParsedCalendar `json:"calendars,omitempty"`
 	Apps      []ParsedApp      `json:"apps,omitempty"`
+	Deploys   []string         `json:"deploys,omitempty"`
 }
 
 type ParsedAction struct {
@@ -71,6 +72,7 @@ var (
 	appHTMLRegex = regexp.MustCompile(`(?is)<html>(.*?)</html>`)
 	appCSSRegex  = regexp.MustCompile(`(?is)<style>(.*?)</style>`)
 	appJSRegex   = regexp.MustCompile(`(?is)<script>(.*?)</script>`)
+	deployRegex  = regexp.MustCompile(`(?is)<deploy>(.*?)</deploy>`)
 )
 
 // ParseLLMOutput parses XML tags from LLM response.
@@ -84,6 +86,7 @@ func ParseLLMOutput(text string) ParsedResponse {
 		Actions:   make([]ParsedAction, 0),
 		Terminals: make([]string, 0),
 		Apps:      make([]ParsedApp, 0),
+		Deploys:   make([]string, 0),
 	}
 
 	if m := thoughtRegex.FindStringSubmatch(text); len(m) > 1 {
@@ -158,8 +161,24 @@ func ParseLLMOutput(text string) ParsedResponse {
 				parsedApp.JS = strings.TrimSpace(jsMatch[1])
 			}
 
+			// Fallback: if no specific tags found, treat whole content as HTML
+			if parsedApp.HTML == "" && parsedApp.CSS == "" && parsedApp.JS == "" {
+				parsedApp.HTML = strings.TrimSpace(appContent)
+			}
+
 			if parsedApp.HTML != "" || parsedApp.CSS != "" || parsedApp.JS != "" {
 				resp.Apps = append(resp.Apps, parsedApp)
+			}
+		}
+	}
+
+	// Handle <deploy>app-name</deploy>
+	deployMatches := deployRegex.FindAllStringSubmatch(text, -1)
+	for _, m := range deployMatches {
+		if len(m) > 1 {
+			appName := strings.TrimSpace(m[1])
+			if appName != "" {
+				resp.Deploys = append(resp.Deploys, appName)
 			}
 		}
 	}

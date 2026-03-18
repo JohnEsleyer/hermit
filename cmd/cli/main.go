@@ -19,7 +19,7 @@ import (
 )
 
 var apiBase = "http://localhost:3000"
-var version = "v0.4.5"
+var version = "v0.5.0"
 var exitFunc = os.Exit
 
 type Credentials struct {
