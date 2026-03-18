@@ -9,19 +9,11 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
-
-	"github.com/joho/godotenv"
 )
 
-var (
-	apiBase = getEnv("HERMIT_API_BASE", "http://localhost:3000")
-	cliUser = getEnv("HERMIT_CLI_USER", "")
-	cliPass = getEnv("HERMIT_CLI_PASS", "")
-)
+var apiBase = "http://localhost:3000"
 
 func main() {
-	godotenv.Load()
-
 	agentsCmd := flag.NewFlagSet("agents", flag.ExitOnError)
 	agentsListCmd := flag.NewFlagSet("list", flag.ExitOnError)
 	agentsCreateCmd := flag.NewFlagSet("create", flag.ExitOnError)
@@ -51,11 +43,6 @@ func main() {
 		fmt.Println("  hermit-cli agents create --name rain --model gpt-4")
 		fmt.Println("  hermit-cli tunnel")
 		fmt.Println("  hermit-cli login --user admin --pass hermit123")
-		fmt.Println("")
-		fmt.Println("Environment variables:")
-		fmt.Println("  HERMIT_API_BASE   API base URL (default: http://localhost:3000)")
-		fmt.Println("  HERMIT_CLI_USER   CLI username")
-		fmt.Println("  HERMIT_CLI_PASS   CLI password")
 	}
 
 	if len(os.Args) < 2 {
@@ -147,8 +134,8 @@ func handleTunnel(tunnel *flag.FlagSet) {
 }
 
 func handleLogin(login *flag.FlagSet) {
-	username := login.String("user", cliUser, "Username")
-	password := login.String("pass", cliPass, "Password")
+	username := login.String("user", "", "Username")
+	password := login.String("pass", "", "Password")
 	login.Parse(os.Args[2:])
 
 	if *username == "" || *password == "" {
