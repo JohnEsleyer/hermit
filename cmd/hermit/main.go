@@ -17,15 +17,18 @@ import (
 	"github.com/JohnEsleyer/HermitShell/internal/docker"
 	"github.com/JohnEsleyer/HermitShell/internal/llm"
 	"github.com/JohnEsleyer/HermitShell/internal/telegram"
+	"github.com/joho/godotenv"
 )
 
 // version represents the current release of HermitShell server.
 // Using Major.Minor.Patch versioning scheme.
-var version = "v0.4.3"
+var version = "v0.4.4"
 
 // main is the entry point for the HermitShell server.
 // It initializes dependencies and starts the Go Fiber API server.
 func main() {
+	ensureEnvFile()
+	godotenv.Load()
 	port := getEnv("PORT", "3000")
 	dbPath := getEnv("DATABASE_PATH", "./data/hermit.db")
 
@@ -373,4 +376,35 @@ func ensureRuntimeData(dataDir string) error {
 
 	_, err = io.Copy(destFile, sourceFile)
 	return err
+}
+
+func ensureEnvFile() {
+	envPath := ".env"
+	if _, err := os.Stat(envPath); err == nil {
+		return // Already exists
+	}
+
+	content := `# HermitShell Configuration
+PORT=3000
+DATABASE_PATH=./data/hermit.db
+HERMIT_API_BASE=http://localhost:3000
+HERMIT_CLI_USER=admin
+HERMIT_CLI_PASS=hermit123
+
+# Telegram (optional)
+# TELEGRAM_BOT_TOKEN=
+
+# LLM Providers
+LLM_PROVIDER=openrouter
+# OPENROUTER_API_KEY=
+# OPENAI_API_KEY=
+# ANTHROPIC_API_KEY=
+# GEMINI_API_KEY=
+`
+	err := os.WriteFile(envPath, []byte(content), 0600)
+	if err != nil {
+		log.Printf("Warning: Failed to create default .env file: %v", err)
+	} else {
+		log.Printf("Generated default .env file with admin credentials.")
+	}
 }

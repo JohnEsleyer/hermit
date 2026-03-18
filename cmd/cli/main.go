@@ -19,7 +19,7 @@ import (
 )
 
 var apiBase = "http://localhost:3000"
-var version = "v0.4.3"
+var version = "v0.4.4"
 
 type Credentials struct {
 	Username string `json:"username"`
