@@ -175,7 +175,7 @@ func main() {
 				}()
 			}()
 
-			go tunnelHealthMonitor(tunnelManager, portInt)
+			go tunnelHealthMonitor(tunnelManager, portInt, dbPath)
 			go webhookHealthMonitor(database, tunnelManager)
 		}
 	}
@@ -236,7 +236,7 @@ func webhookHealthMonitor(database *db.DB, tm *cloudflare.TunnelManager) {
 	}
 }
 
-func tunnelHealthMonitor(tm *cloudflare.TunnelManager, port int) {
+func tunnelHealthMonitor(tm *cloudflare.TunnelManager, port int, dbPath string) {
 	time.Sleep(10 * time.Second)
 
 	ticker := time.NewTicker(30 * time.Second)
@@ -256,6 +256,10 @@ func tunnelHealthMonitor(tm *cloudflare.TunnelManager, port int) {
 				log.Printf("Failed to restart tunnel: %v", err)
 			} else {
 				log.Printf("Tunnel restarted: %s", url)
+				urlFile := filepath.Join(filepath.Dir(dbPath), "tunnel_url.txt")
+				if err := os.WriteFile(urlFile, []byte(url), 0644); err != nil {
+					log.Printf("Failed to update tunnel URL file: %v", err)
+				}
 			}
 		}
 	}
