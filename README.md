@@ -60,13 +60,13 @@ make run
 
 ```bash
 # Build the Go server
-go build -o hermit ./cmd/hermit/main.go
+go build -o hermit-server ./cmd/hermit/main.go
 
 # Build the Docker image for agents
 docker build -t hermit-agent:latest .
 
 # Run
-./hermit
+./hermit-server
 ```
 
 Server starts on port 3000:
@@ -120,7 +120,7 @@ hermit/
 ├── dashboard/            # React frontend (Vite + Tailwind)
 ├── context.md            # Base agent context template
 ├── Dockerfile            # Agent container image definition
-└── hermit               # Compiled binary
+└── hermit-server        # Compiled binary
 ```
 
 ---

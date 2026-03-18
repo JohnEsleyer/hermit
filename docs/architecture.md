@@ -7,8 +7,8 @@ Hermit is an AI Agent Orchestration System that enables autonomous agents to run
 ## Core Components
 
 ### 1. Dashboard (React + Go Fiber)
-- **Frontend:** React 18 with TailwindCSS
-- **Backend:** Go Fiber REST API
+- **Frontend:** React 18 with TailwindCSS (built with Bun/NPM)
+- **Backend:** Go Fiber REST API (`hermit-server`)
 - **Purpose:** User interface for managing agents, viewing metrics, configuring settings
 
 ### 2. Agent Runtime (Docker)

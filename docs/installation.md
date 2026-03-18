@@ -22,7 +22,8 @@ If you prefer to install manually, follow these steps:
 
 ### Prerequisites
 
-- **Node.js** 20+ 
+- **Node.js** 20+
+- **Bun** (optional, recommended for UI build)
 - **Go** 1.25+
 - **Docker**
 - **SQLite3**
@@ -32,23 +33,23 @@ If you prefer to install manually, follow these steps:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/JohnEsleyer/hermit.git
+git clone https://github.com/JohnEsleyer/HermitShell.git
 cd hermit
 
-# 2. Install frontend dependencies
-cd dashboard
-npm install
-npm run build
-cd ..
+# 2. Build the application (Recommended)
+make setup
+make build
 
-# 3. Build Go server
-go build -o hermit ./cmd/hermit/main.go
-
-# 4. Build Docker image
+# 3. Alternative: Manual build
+# Build frontend
+cd dashboard && npm install && npm run build && cd ..
+# Build Go server
+go build -o hermit-server ./cmd/hermit/main.go
+# Build Docker image
 docker build -t hermit-agent:latest .
 
-# 5. Run the server
-./hermit
+# 4. Run the server
+./hermit-server
 ```
 
 ## Configuration
@@ -153,8 +154,8 @@ make all
 
 ```bash
 # Stop the server
-pkill hermit
+pkill hermit-server
 
 # Remove files (optional)
-rm -rf hermit data/ hermit-agent:latest
+rm -rf hermit-server data/ hermit-agent:latest
 ```

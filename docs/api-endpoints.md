@@ -76,9 +76,43 @@ func (s *Server) setupRoutes(app *fiber.App) {
     api.Put("/calendar/:id", s.HandleUpdateCalendarEvent)
     api.Delete("/calendar/:id", s.HandleDeleteCalendarEvent)
 
-    // ... more routes ...
+    // Skill routes
+    api.Get("/skills", s.HandleListSkills)
+    api.Post("/skills", s.HandleCreateSkill)
+    api.Put("/skills/:id", s.HandleUpdateSkill)
+    api.Delete("/skills/:id", s.HandleDeleteSkill)
 
-    // Setup static file serving
+    // Allowlist routes
+    api.Get("/allowlist", s.HandleListAllowlist)
+    api.Post("/allowlist", s.HandleCreateAllowlist)
+    api.Delete("/allowlist/:id", s.HandleDeleteAllowlist)
+
+    // Metrics and Logs
+    api.Get("/metrics", s.HandleMetrics)
+    api.Get("/logs", s.HandleGetLogs)
+    api.Get("/containers", s.HandleContainers)
+    api.Delete("/containers/:id", s.HandleTerminateContainer)
+    api.Post("/containers/:id/action", s.HandleContainerAction)
+    api.Get("/containers/:id/files", s.HandleContainerFiles)
+    api.Get("/containers/:id/download", s.HandleContainerDownload)
+
+    // Settings
+    api.Get("/settings", s.HandleGetSettings)
+    api.Post("/settings", s.HandleSetSettings)
+    api.Get("/settings/domain-status", s.HandleDomainStatus)
+    api.Get("/tunnel-url", s.HandleGetTunnelURL)
+
+    // Backup and Restore
+    api.Get("/backup/export", s.HandleExportBackup)
+    api.Post("/backup/import", s.HandleImportBackup)
+
+    // Telegram and Webhooks
+    api.Post("/telegram/send-code", s.HandleTelegramSendCode)
+    api.Post("/telegram/verify", s.HandleTelegramVerify)
+    api.Post("/webhook", s.HandleWebhook)
+    api.Post("/webhook/:agentId", s.HandleAgentWebhook)
+
+    // Static file serving
     s.setupStaticRoutes(app)
 }
 ```
@@ -235,7 +269,7 @@ func (d *DB) ListMyResource() ([]*MyResource, error) {
 
 ## Related Files
 
-- Route Setup: `internal/api/server.go` (lines 222-286)
-- Handler Examples: `internal/api/server.go` (various)
+- Route Setup: `internal/api/server.go` (search for `setupRoutes`)
+- Handler Examples: `internal/api/server.go` (HandleXxx functions)
 - Database Functions: `internal/db/db.go`
 - Frontend API Calls: `dashboard/src/App.tsx`

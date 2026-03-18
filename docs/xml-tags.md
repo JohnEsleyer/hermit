@@ -123,7 +123,7 @@ Schedule a calendar event. Supports multiple events in a single response.
 </calendar>
 ```
 
-Or with separate date and time:
+Or with separate date and time (fallback if datetime is missing):
 ```xml
 <calendar>
 <date>2025-05-23</date>
@@ -132,19 +132,15 @@ Or with separate date and time:
 </calendar>
 ```
 
-**Multiple events:**
+**Multiple events in one response:**
 ```xml
 <calendar>
-<datetime>2026-03-17T13:00:00</datetime>
-<prompt>First lesson</prompt>
+<datetime>2026-03-17T13:00</datetime>
+<prompt>First reminder</prompt>
 </calendar>
 <calendar>
-<datetime>2026-03-17T13:05:00</datetime>
-<prompt>Second lesson</prompt>
-</calendar>
-<calendar>
-<datetime>2026-03-17T13:10:00</datetime>
-<prompt>Third lesson</prompt>
+<datetime>2026-03-17T13:05</datetime>
+<prompt>Second reminder</prompt>
 </calendar>
 ```
 
