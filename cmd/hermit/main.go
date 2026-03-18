@@ -19,7 +19,7 @@ import (
 	"github.com/JohnEsleyer/hermit/internal/telegram"
 )
 
-var version = "v0.4.0"
+var version = "v0.4.1"
 
 func main() {
 	port := getEnv("PORT", "3000")

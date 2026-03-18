@@ -163,6 +163,47 @@ func (d *DB) migrate() error {
 		updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
 	);
+
+	CREATE TABLE IF NOT EXISTS users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'user',
+		must_change_password INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS allowlist (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		telegram_user_id TEXT NOT NULL,
+		friendly_name TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS calendar (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id INTEGER NOT NULL,
+		date TEXT NOT NULL,
+		time TEXT NOT NULL,
+		prompt TEXT NOT NULL,
+		executed INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		FOREIGN KEY(agent_id) REFERENCES agents(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS tunnels (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id INTEGER NOT NULL,
+		tunnel_uuid TEXT NOT NULL,
+		tunnel_name TEXT NOT NULL,
+		public_hostname TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'inactive',
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+		FOREIGN KEY(agent_id) REFERENCES agents(id)
+	);
 	`
 
 	if _, err := d.db.Exec(schema); err != nil {
