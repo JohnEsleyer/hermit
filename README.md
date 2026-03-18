@@ -1,18 +1,18 @@
-# Hermit - AI Agent OS
+# HermitShell - AI Agent OS
 
 <p align="center">
-  <img src="docs/images/banner.svg" alt="Hermit AI Agent OS" width="100%">
+  <img src="docs/images/banner.svg" alt="HermitShell AI Agent OS" width="100%">
 </p>
 
 <p align="center">
-  <a href="https://github.com/JohnEsleyer/hermit">
-    <img src="https://img.shields.io/badge/Hermit-Agent%20OS-000000?style=for-the-badge&logo=github" alt="Hermit">
+  <a href="https://github.com/JohnEsleyer/HermitShell">
+    <img src="https://img.shields.io/badge/HermitShell-AI%20Agent%20OS-000000?style=for-the-badge&logo=github" alt="HermitShell">
   </a>
-  <a href="https://github.com/JohnEsleyer/hermit/releases">
-    <img src="https://img.shields.io/github/v/release/JohnEsleyer/hermit?include_prereleases&style=for-the-badge" alt="Release">
+  <a href="https://github.com/JohnEsleyer/HermitShell/releases">
+    <img src="https://img.shields.io/github/v/release/JohnEsleyer/HermitShell?include_prereleases&style=for-the-badge" alt="Release">
   </a>
-  <a href="https://github.com/JohnEsleyer/hermit/stargazers">
-    <img src="https://img.shields.io/github/stars/JohnEsleyer/hermit?style=for-the-badge" alt="Stars">
+  <a href="https://github.com/JohnEsleyer/HermitShell/stargazers">
+    <img src="https://img.shields.io/github/stars/JohnEsleyer/HermitShell?style=for-the-badge" alt="Stars">
   </a>
 </p>
 

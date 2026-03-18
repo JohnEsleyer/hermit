@@ -30,6 +30,6 @@
   </g>
 
   <!-- Typography -->
-  <text x="400" y="200" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="46" font-weight="900" fill="#ffffff" letter-spacing="6">HERMIT</text>
+  <text x="400" y="200" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="46" font-weight="900" fill="#ffffff" letter-spacing="6">HERMITSHELL</text>
   <text x="400" y="235" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="600" fill="#a1a1aa" letter-spacing="3">AI AGENT OS</text>
 </svg>
