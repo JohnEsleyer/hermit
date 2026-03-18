@@ -138,9 +138,9 @@ func runCLI() {
 	tunnelCmd := flag.NewFlagSet("tunnel", flag.ExitOnError)
 
 	flag.Usage = func() {
-		fmt.Println("Hermit CLI - AI Agent Orchestrator")
+		fmt.Println("HermitShell CLI - AI Agent Orchestrator")
 		fmt.Println("")
-		fmt.Println("Usage: hermit-cli <command> [subcommand] [options]")
+		fmt.Println("Usage: hermitshell <command> [subcommand] [options]")
 		fmt.Println("")
 		fmt.Println("Commands:")
 		fmt.Println("  agents      Manage agents")
@@ -150,9 +150,9 @@ func runCLI() {
 		fmt.Println("  help        Show this help message")
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  hermit-cli agents list")
-		fmt.Println("  hermit-cli agents create --name rain --model gpt-4")
-		fmt.Println("  hermit-cli tunnel")
+		fmt.Println("  hermitshell agents list")
+		fmt.Println("  hermitshell agents create --name rain --model gpt-4")
+		fmt.Println("  hermitshell tunnel")
 	}
 
 	if len(os.Args) < 2 {
@@ -271,8 +271,8 @@ func printAgents() {
 	}
 	w.Flush()
 
-	fmt.Println("\nUse: hermit-cli agents create --name <name> --model <model>")
-	fmt.Println("     hermit-cli agents delete --id <id>")
+	fmt.Println("\nUse: hermitshell agents create --name <name> --model <model>")
+	fmt.Println("     hermitshell agents delete --id <id>")
 }
 
 func createAgent(name, role, model, provider string) {

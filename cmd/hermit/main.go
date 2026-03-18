@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/JohnEsleyer/hermit/internal/api"
-	"github.com/JohnEsleyer/hermit/internal/cloudflare"
-	"github.com/JohnEsleyer/hermit/internal/db"
-	"github.com/JohnEsleyer/hermit/internal/docker"
-	"github.com/JohnEsleyer/hermit/internal/llm"
-	"github.com/JohnEsleyer/hermit/internal/telegram"
+	"github.com/JohnEsleyer/HermitShell/internal/api"
+	"github.com/JohnEsleyer/HermitShell/internal/cloudflare"
+	"github.com/JohnEsleyer/HermitShell/internal/db"
+	"github.com/JohnEsleyer/HermitShell/internal/docker"
+	"github.com/JohnEsleyer/HermitShell/internal/llm"
+	"github.com/JohnEsleyer/HermitShell/internal/telegram"
 )
 
 var version = "v0.4.2"

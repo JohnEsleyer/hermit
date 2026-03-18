@@ -5,7 +5,7 @@ all: build
 
 # Setup - builds Docker image and installs dependencies
 setup: build-docker
-	@echo "Setup complete! Run 'make run' to start Hermit."
+	@echo "Setup complete! Run 'make run' to start HermitShell."
 
 # Build everything (UI + Server + CLI + Docker image)
 build: build-ui build-server build-cli build-docker
@@ -13,19 +13,19 @@ build: build-ui build-server build-cli build-docker
 # Build only the frontend
 build-ui:
 	@echo "Building frontend..."
-	cd dashboard && npm run build
+	cd dashboard && bun run build
 	@echo "Frontend built successfully."
 
 # Build only the Go server
 build-server:
 	@echo "Building server..."
-	go build -o hermit ./cmd/hermit/main.go
+	go build -o hermit-server ./cmd/hermit/main.go
 	@echo "Server built successfully."
 
 # Build CLI
 build-cli:
 	@echo "Building CLI..."
-	go build -o hermit-cli ./cmd/cli/main.go
+	go build -o hermitshell ./cmd/cli/main.go
 	@echo "CLI built successfully."
 
 # Build Docker image for agents
@@ -40,7 +40,7 @@ dev:
 
 # Run production server
 run: build
-	./hermit
+	./hermit-server
 
 # Run tests
 test:
@@ -52,19 +52,20 @@ lint:
 
 # Clean build artifacts
 clean:
-	rm -f hermit
+	rm -f hermit-server hermitshell
 	cd dashboard && rm -rf dist
 	@echo "Clean complete."
 
 # Help target
 help:
-	@echo "Hermit - AI Agent Orchestrator"
+	@echo "HermitShell - AI Agent Orchestrator"
 	@echo ""
 	@echo "Available targets:"
 	@echo "  setup          - Build Docker image and prepare for first run"
 	@echo "  build          - Build frontend, server, and Docker image"
 	@echo "  build-ui       - Build the React dashboard"
 	@echo "  build-server   - Build the Go server binary"
+	@echo "  build-cli      - Build the CLI binary"
 	@echo "  build-docker   - Build the hermit-agent Docker image"
 	@echo "  dev            - Run the server in development mode"
 	@echo "  run            - Build and run the production server"

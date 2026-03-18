@@ -1,6 +1,6 @@
 # Binaries
-hermit
-hermit-cli
+hermit-server
+hermitshell
 hermit_new
 hermit_test
 *.exe
