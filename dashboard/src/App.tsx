@@ -252,18 +252,22 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
             <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2 ml-4">Username</label>
             <input 
               type="text" 
+              autoComplete="off"
+              placeholder="admin"
               value={username}
               onChange={e => setUsername(e.target.value)}
-              className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500"
+              className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 placeholder:text-zinc-600"
             />
           </div>
           <div>
             <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2 ml-4">Password</label>
             <input 
               type="password" 
+              autoComplete="off"
+              placeholder="hermit123"
               value={password}
               onChange={e => setPassword(e.target.value)}
-              className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500"
+              className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 placeholder:text-zinc-600"
             />
           </div>
           <button 
@@ -272,9 +276,6 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
           >
             Login
           </button>
-          <p className="text-xs text-zinc-500 text-center mt-4">
-            Hint: admin / hermit123
-          </p>
         </div>
       </div>
     </div>
