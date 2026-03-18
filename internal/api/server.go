@@ -280,6 +280,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Get("/settings", s.HandleGetSettings)
 	api.Post("/settings", s.HandleSetSettings)
 	api.Get("/settings/domain-status", s.HandleDomainStatus)
+	api.Get("/tunnel-url", s.HandleGetTunnelURL)
 	api.Get("/time", s.HandleGetTime)
 
 	// Backup and Restore - Export/Import all app data
@@ -1613,6 +1614,16 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 		"timezone":      timezone,
 		"timeOffset":    timeOffset,
 		"hasLLMKey":     openrouterKey != "" || openaiKey != "" || anthropicKey != "" || geminiKey != "",
+	})
+}
+
+func (s *Server) HandleGetTunnelURL(c *fiber.Ctx) error {
+	tunnelURL := s.tunnels.GetURL("dashboard")
+	isHealthy := s.tunnels.CheckTunnelHealth("dashboard", 2*time.Second)
+
+	return c.JSON(fiber.Map{
+		"url":     tunnelURL,
+		"healthy": isHealthy,
 	})
 }
 

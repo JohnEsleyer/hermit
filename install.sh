@@ -254,6 +254,20 @@ else
     nohup ./hermit > data/logs/hermit.log 2>&1 &
 fi
 
+# Wait for Hermit to start and get tunnel URL
+print_info "Waiting for Hermit to start..."
+sleep 5
+
+# Try to get tunnel URL from API
+TUNNEL_URL=""
+for i in 1 2 3 4 5 6; do
+    TUNNEL_URL=$(curl -s http://localhost:3000/api/tunnel-url 2>/dev/null | grep -o '"url":"[^"]*' | cut -d'"' -f4)
+    if [ -n "$TUNNEL_URL" ]; then
+        break
+    fi
+    sleep 2
+done
+
 # ============================================
 # 5. Summary
 # ============================================
@@ -262,26 +276,33 @@ echo "=========================================="
 echo "  Installation Complete!"
 echo "=========================================="
 echo ""
-echo "Systemd Commands (if enabled):"
-echo "  sudo systemctl status hermit   - Check status"
-echo "  sudo systemctl restart hermit  - Restart"
-echo "  sudo systemctl stop hermit    - Stop"
-echo "  journalctl -u hermit -f       - View logs"
+echo "  🚀 ACCESS YOUR DASHBOARD:"
 echo ""
-echo "Or manually:"
-echo "  ./hermit                      - Run directly"
-echo "  tail -f data/logs/hermit.log  - View logs"
+if [ -n "$TUNNEL_URL" ]; then
+    echo "     🌐 Public URL: $TUNNEL_URL"
+else
+    echo "     💻 Local:     http://localhost:3000"
+fi
+echo "     👤 Username:  admin"
+echo "     🔑 Password:  hermit123"
 echo ""
-echo "Next steps:"
-echo "  1. Configure your API keys in .env (or via dashboard)"
-echo "  2. Open: http://localhost:3000"
-echo "  3. Login with: admin / hermit123"
+echo "  To get tunnel URL later:"
+echo "    curl http://localhost:3000/api/tunnel-url"
+echo "    cat data/tunnel_url.txt"
 echo ""
-echo "For production, consider:"
-echo "  - Running behind a reverse proxy (nginx/traefik)"
-echo "  - Setting up a custom domain"
-echo "  - Enabling SSL/TLS"
-echo "  - Configuring firewall rules"
+echo "  Systemd Commands (if enabled):"
+echo "    sudo systemctl status hermit   - Check status"
+echo "    sudo systemctl restart hermit  - Restart"
+echo "    journalctl -u hermit -f       - View logs"
+echo ""
+echo "  Or manually:"
+echo "    ./hermit                      - Run directly"
+echo "    tail -f data/logs/hermit.log  - View logs"
+echo ""
+echo "  For production, consider:"
+echo "    - Running behind a reverse proxy (nginx/traefik)"
+echo "    - Setting up a custom domain"
+echo "    - Enabling SSL/TLS"
 echo ""
 print_success "Ready to start Hermit!"
 echo ""
