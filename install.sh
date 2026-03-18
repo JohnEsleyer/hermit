@@ -174,6 +174,11 @@ print_info "Building Go server..."
 go build -o hermit ./cmd/hermit/main.go
 print_success "Go server built!"
 
+# Build CLI
+print_info "Building CLI..."
+go build -o hermit-cli ./cmd/cli/main.go
+print_success "CLI built!"
+
 # Build Docker image
 print_info "Building Docker image (hermit-agent:latest)..."
 docker build -t hermit-agent:latest . --quiet
@@ -297,7 +302,7 @@ echo "     🔑 Password:  hermit123"
 echo ""
 echo "  To get tunnel URL later:"
 echo "    curl http://localhost:3000/api/tunnel-url"
-echo "    cat data/tunnel_url.txt"
+echo "    journalctl -u hermit -f | grep 'Public URL'"
 echo ""
 echo "  Systemd Commands (if enabled):"
 echo "    sudo systemctl status hermit   - Check status"

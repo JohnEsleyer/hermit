@@ -19,7 +19,7 @@ import (
 	"github.com/JohnEsleyer/hermit/internal/telegram"
 )
 
-var version = "v0.4.1"
+var version = "v0.4.2"
 
 func main() {
 	port := getEnv("PORT", "3000")
@@ -147,14 +147,6 @@ func main() {
 				}
 				log.Printf("==> Dashboard Public URL: %s", url)
 
-				// Save tunnel URL to file for easy access
-				urlFile := filepath.Join(filepath.Dir(dbPath), "tunnel_url.txt")
-				if err := os.WriteFile(urlFile, []byte(url), 0644); err != nil {
-					log.Printf("Failed to write tunnel URL to file: %v", err)
-				} else {
-					log.Printf("Tunnel URL saved to: %s", urlFile)
-				}
-
 				// Initial webhook update with retries
 				go func() {
 					log.Printf("Waiting for tunnel %s to propagate...", url)
@@ -256,10 +248,6 @@ func tunnelHealthMonitor(tm *cloudflare.TunnelManager, port int, dbPath string) 
 				log.Printf("Failed to restart tunnel: %v", err)
 			} else {
 				log.Printf("Tunnel restarted: %s", url)
-				urlFile := filepath.Join(filepath.Dir(dbPath), "tunnel_url.txt")
-				if err := os.WriteFile(urlFile, []byte(url), 0644); err != nil {
-					log.Printf("Failed to update tunnel URL file: %v", err)
-				}
 			}
 		}
 	}
