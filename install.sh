@@ -135,11 +135,15 @@ fi
 if ! command -v cloudflared &> /dev/null; then
     print_info "Installing cloudflared..."
     if [[ "$OS" == "linux-gnu"* ]]; then
-        wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /tmp/cloudflared
-        sudo mv /tmp/cloudflared /usr/local/bin/cloudflared
-        sudo chmod +x /usr/local/bin/cloudflared
+        if wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /tmp/cloudflared; then
+             sudo mv /tmp/cloudflared /usr/local/bin/cloudflared || mv /tmp/cloudflared /usr/local/bin/cloudflared
+             sudo chmod +x /usr/local/bin/cloudflared || chmod +x /usr/local/bin/cloudflared
+             print_success "cloudflared installed successfully."
+        else
+             print_warning "Failed to download cloudflared. Tunneling features may be unavailable."
+        fi
     elif [[ "$OS" == "macos" ]]; then
-        brew install cloudflared
+        brew install cloudflared || print_warning "Failed to install cloudflared via Homebrew."
     fi
 fi
 

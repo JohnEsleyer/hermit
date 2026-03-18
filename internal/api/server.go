@@ -303,8 +303,9 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Delete("/agents/:id/skills/:skillId", s.HandleDeleteSkill)
 
 	// App serving
-	api.Get("/apps/:agentId/:appName/*", s.HandleServeApp)
-	api.Get("/apps/:agentId/:appName", s.HandleServeApp)
+	app.Get("/apps/:agentId/:appName/*", s.HandleServeApp)
+	app.Get("/apps/:agentId/:appName", s.HandleServeApp)
+	api.Get("/agents/:id/apps", s.HandleListApps)
 
 	s.setupStaticRoutes(app)
 }
@@ -1618,7 +1619,46 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleGetTunnelURL(c *fiber.Ctx) error {
+	domainMode, _ := s.db.GetSetting("domain_mode")
+	if domainMode == "true" {
+		domain, _ := s.db.GetSetting("domain")
+		if domain != "" {
+			if !strings.HasPrefix(domain, "http") {
+				domain = "https://" + domain
+			}
+			return c.JSON(fiber.Map{
+				"url":     domain,
+				"healthy": true,
+			})
+		}
+	}
+
 	tunnelURL := s.tunnels.GetURL("dashboard")
+
+	// If tunnel is active but no URL yet, wait a bit
+	if tunnelURL == "" && s.tunnels.IsRunning("dashboard") {
+		for i := 0; i < 5; i++ {
+			time.Sleep(1 * time.Second)
+			tunnelURL = s.tunnels.GetURL("dashboard")
+			if tunnelURL != "" {
+				break
+			}
+		}
+	}
+
+	// If still no tunnel URL, trigger it if not in domain mode
+	if tunnelURL == "" && domainMode != "true" {
+		port, _ := strconv.Atoi(os.Getenv("PORT"))
+		if port == 0 {
+			port = 3000
+		}
+		// Synchronously wait for it (StartQuickTunnel has its own timeout)
+		newURL, err := s.tunnels.StartQuickTunnel("dashboard", port)
+		if err == nil {
+			tunnelURL = newURL
+		}
+	}
+
 	isHealthy := s.tunnels.CheckTunnelHealth("dashboard", 2*time.Second)
 
 	return c.JSON(fiber.Map{
@@ -2264,6 +2304,36 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 	}
 }
 
+func (s *Server) HandleListApps(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	agent, err := s.db.GetAgent(id)
+	if err != nil || agent == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
+	}
+
+	containerName := agent.ContainerID
+	if containerName == "" {
+		containerName = "agent-" + strings.ToLower(agent.Name)
+	}
+
+	appsDir := "/app/workspace/apps"
+	files, err := s.docker.ListContainerFiles(containerName, appsDir)
+	if err != nil {
+		return c.JSON([]interface{}{})
+	}
+
+	var apps []fiber.Map
+	for _, f := range files {
+		if f.IsDir {
+			apps = append(apps, fiber.Map{
+				"name": f.Name,
+				"url":  fmt.Sprintf("/apps/%d/%s", id, f.Name),
+			})
+		}
+	}
+	return c.JSON(apps)
+}
+
 // ExecuteXMLPayload processes parsed XML tags from LLM response.
 // Docs: See docs/xml-tags.md for all supported tags.
 // Handles: <message>, <terminal>, <give>, <app>, <skill>, <calendar>, <thought>, <system>
@@ -2412,13 +2482,36 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 			// Log the action
 			s.db.LogAction(agentID, "system", "action_app_created", fmt.Sprintf("App: %s created", app.Name))
 
-			// Generate public URL
-			publicURL := s.tunnels.GetURL("dashboard") + fmt.Sprintf("/api/apps/%d/%s", agentID, app.Name)
-			bot.SendMessage(chatID, "🚀 App Created: "+app.Name+"\n\nAccess it here: "+publicURL)
-
 			feedback = append(feedback, map[string]interface{}{
 				"action": "APP",
 				"app":    app.Name,
+				"status": "SUCCESS",
+			})
+		}
+	}
+
+	// Handle <deploy>app-name</deploy>
+	for _, appName := range parsed.Deploys {
+		if agentID > 0 && bot != nil {
+			s.db.LogAction(agentID, "system", "action_app_deployed", fmt.Sprintf("App: %s deployed", appName))
+
+			domainMode, _ := s.db.GetSetting("domain_mode")
+			var publicURL string
+			if domainMode == "true" {
+				domain, _ := s.db.GetSetting("domain")
+				if !strings.HasPrefix(domain, "http") {
+					domain = "https://" + domain
+				}
+				publicURL = fmt.Sprintf("%s/apps/%d/%s", domain, agentID, appName)
+			} else {
+				publicURL = s.tunnels.GetURL("dashboard") + fmt.Sprintf("/apps/%d/%s", agentID, appName)
+			}
+
+			bot.SendMessage(chatID, "🚀 App Deployed: "+appName+"\n\nAccess it here: "+publicURL)
+
+			feedback = append(feedback, map[string]interface{}{
+				"action": "DEPLOY",
+				"app":    appName,
 				"status": "SUCCESS",
 				"url":    publicURL,
 			})

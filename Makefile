@@ -1,11 +1,23 @@
-.PHONY: all build setup install build-ui build-server build-docker dev clean test lint run
+.PHONY: all build setup install-deps build-ui build-server build-cli build-docker dev clean test lint run
 
 # Default target - builds everything
 all: build
 
 # Setup - builds Docker image and installs dependencies
-setup: build-docker
+setup: install-deps build-docker
 	@echo "Setup complete! Run 'make run' to start HermitShell."
+
+# Install dependencies like cloudflared
+install-deps:
+	@echo "Installing dependencies (cloudflared)..."
+	@if [ "$$(uname -s)" = "Linux" ]; then \
+		wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -O /tmp/cloudflared && \
+		(sudo mv /tmp/cloudflared /usr/local/bin/cloudflared || mv /tmp/cloudflared /usr/local/bin/cloudflared) && \
+		chmod +x /usr/local/bin/cloudflared; \
+	elif [ "$$(uname -s)" = "Darwin" ]; then \
+		(brew install cloudflared || echo "Homebrew not found, please install cloudflared manually."); \
+	fi
+	@echo "Dependencies installed successfully."
 
 # Build everything (UI + Server + CLI + Docker image)
 build: build-ui build-server build-cli build-docker
@@ -61,7 +73,8 @@ help:
 	@echo "HermitShell - AI Agent Orchestrator"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  setup          - Build Docker image and prepare for first run"
+	@echo "  setup          - Build Docker image and install dependencies"
+	@echo "  install-deps   - Install mandatory dependencies (cloudflared)"
 	@echo "  build          - Build frontend, server, and Docker image"
 	@echo "  build-ui       - Build the React dashboard"
 	@echo "  build-server   - Build the Go server binary"

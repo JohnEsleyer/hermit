@@ -48,53 +48,47 @@ The system will:
 
 ### `<app>` - Create Web Application
 
-Create a web application with HTML, CSS, and JavaScript. The system automatically creates the file structure.
+Create a web application with HTML, CSS, and JavaScript. The system automatically creates the file structure in the agent's container.
 
 ```xml
 <app name="myapp">
 <html>
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My App</title>
-</head>
-<body>
-    <h1>Hello World</h1>
-    <button id="btn">Click me</button>
-</body>
-</html>
+  <h1>Hello World</h1>
 </html>
 <style>
-body {
-    font-family: sans-serif;
-    padding: 20px;
-}
-h1 { color: #333; }
-button {
-    padding: 10px 20px;
-    background: blue;
-    color: white;
-    border: none;
-    cursor: pointer;
-}
+  h1 { color: blue; }
 </style>
 <script>
-document.getElementById('btn').addEventListener('click', function() {
-    alert('Button clicked!');
-});
+  console.log('App loaded');
 </script>
 </app>
 ```
 
 **What happens:**
-1. System creates folder `/app/workspace/apps/myapp/`
-2. Creates `index.html` with embedded CSS and JS
-3. Returns a public URL to access the app
+1. System creates folder `/app/workspace/apps/myapp/` inside the container.
+2. Creates `index.html` with embedded CSS and JS.
+3. The app is stored but not yet "published" to the user with a public URL (use `<deploy>` for that).
+
+---
+
+### `<deploy>` - Publish Web Application
+
+Publish a previously created app and generate a public URL.
+
+```xml
+<deploy>myapp</deploy>
+```
+
+**What happens:**
+1. System verifies the app exists in `/app/workspace/apps/myapp/`.
+2. Generates a public URL.
+3. Sends the URL to the user via Telegram.
+4. The app appears in the **Apps** panel of the dashboard.
 
 **Result**:
 ```
-🚀 App Created: myapp
-Access it here: https://your-tunnel-url/api/apps/{agent-id}/myapp
+🚀 App Deployed: myapp
+Access it here: https://your-tunnel-url/apps/{agent-id}/myapp
 ```
 
 ---
@@ -209,36 +203,26 @@ Legacy syntax for publishing apps. The new `<app>` tag is recommended.
 
 <app name="calculator">
 <html>
-<!DOCTYPE html>
-<html>
-<head><title>Calculator</title></head>
-<body>
-    <input id="a" type="number" placeholder="First number">
-    <select id="op"><option>+</option><option>-</option><option>*</option><option>/</option></select>
-    <input id="b" type="number" placeholder="Second number">
-    <button onclick="calculate()">=</button>
-    <div id="result"></div>
-</body>
+  <h1>Calculator</h1>
+  <input id="a" type="number">
+  <select id="op"><option>+</option><option>-</option></select>
+  <input id="b" type="number">
+  <button onclick="calc()">=</button>
+  <p id="res"></p>
 </html>
-</html>
-<style>
-body { font-family: sans-serif; padding: 20px; text-align: center; }
-input, select, button { padding: 10px; margin: 5px; }
-#result { font-size: 24px; margin-top: 20px; }
-</style>
 <script>
-function calculate() {
-    const a = parseFloat(document.getElementById('a').value);
-    const b = parseFloat(document.getElementById('b').value);
-    const op = document.getElementById('op').value;
-    let result = 0;
-    switch(op) { case '+': result = a + b; break; case '-': result = a - b; break; case '*': result = a * b; break; case '/': result = a / b; break; }
-    document.getElementById('result').innerText = result;
+function calc() {
+  const a = parseFloat(document.getElementById('a').value);
+  const b = parseFloat(document.getElementById('b').value);
+  const op = document.getElementById('op').value;
+  document.getElementById('res').innerText = op === '+' ? a + b : a - b;
 }
 </script>
 </app>
 
-<message>Your calculator app is ready!</message>
+<deploy>calculator</deploy>
+
+<message>Your calculator app is ready and deployed!</message>
 ```
 
 ---
