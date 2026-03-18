@@ -9,8 +9,8 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/user"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -19,7 +19,8 @@ import (
 )
 
 var apiBase = "http://localhost:3000"
-var version = "v0.4.4"
+var version = "v0.4.5"
+var exitFunc = os.Exit
 
 type Credentials struct {
 	Username string `json:"username"`
@@ -96,14 +97,16 @@ func promptLogin() {
 
 	if username == "" || password == "" {
 		fmt.Println("Username and password required")
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 
 	fmt.Print("Logging in...")
 	if !login(username, password) {
 		fmt.Println(" failed")
 		fmt.Println("Invalid credentials")
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 	fmt.Println(" OK")
 	saveCredentials(username, password)
@@ -190,7 +193,8 @@ func runCLI() {
 
 	if len(os.Args) < 2 {
 		flag.Usage()
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 
 	switch os.Args[1] {
@@ -217,7 +221,8 @@ func runCLI() {
 	default:
 		fmt.Printf("Unknown command: %s\n", os.Args[1])
 		flag.Usage()
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 }
 
@@ -239,7 +244,8 @@ func handleAgents(args []string, parent, list, create, delete *flag.FlagSet) {
 		create.Parse(args[1:])
 		if *name == "" {
 			fmt.Println("Error: --name is required")
-			os.Exit(1)
+			exitFunc(1)
+			return
 		}
 		createAgent(*name, *role, *model, *provider)
 	case "delete":
@@ -247,7 +253,8 @@ func handleAgents(args []string, parent, list, create, delete *flag.FlagSet) {
 		delete.Parse(args[1:])
 		if *id == 0 {
 			fmt.Println("Error: --id is required")
-			os.Exit(1)
+			exitFunc(1)
+			return
 		}
 		deleteAgent(*id)
 	default:
@@ -259,24 +266,64 @@ func handleContainers(args []string, parent, list *flag.FlagSet) {
 	printContainers()
 }
 
+// handleTunnel tests the Cloudflare tunnel and displays the public URL.
+// Reference: See docs/cloudflared.md for tunnel management and URL extraction.
 func handleTunnel(tunnel *flag.FlagSet) {
+	// First check if cloudflared binary is available
+	if err := checkCloudflaredBinary(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+		fmt.Println("Cloudflare tunnel may not be available")
+	}
+
+	// Fetch tunnel URL from API
 	req, _ := http.NewRequest("GET", apiBase+"/api/tunnel-url", nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 	defer resp.Body.Close()
 
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
 
-	if url, ok := result["url"].(string); ok && url != "" {
-		fmt.Println(url)
+	url, urlOk := result["url"].(string)
+	healthy, healthyOk := result["healthy"].(bool)
+
+	if urlOk && url != "" {
+		status := "unknown"
+		if healthyOk {
+			if healthy {
+				status = "healthy"
+			} else {
+				status = "unhealthy"
+			}
+		}
+		fmt.Printf("Tunnel URL: %s\n", url)
+		fmt.Printf("Status: %s\n", status)
+		if healthyOk && !healthy {
+			fmt.Println("Note: Tunnel may be still provisioning. Try again in a few seconds.")
+		}
 	} else {
 		fmt.Println("Tunnel not available")
-		os.Exit(1)
+		if domainMode, _ := result["domainMode"].(bool); domainMode {
+			fmt.Println("Domain mode is enabled. Use your configured domain instead.")
+		}
+		exitFunc(1)
+		return
 	}
+}
+
+// checkCloudflaredBinary verifies that the cloudflared CLI is installed.
+// Reference: See docs/cloudflared.md for installation instructions.
+func checkCloudflaredBinary() error {
+	cmd := exec.Command("cloudflared", "--version")
+	err := cmd.Run()
+	if err != nil {
+		return fmt.Errorf("cloudflared CLI not found. Install from: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started-guide/run-as-24-7-service/")
+	}
+	return nil
 }
 
 func printAgents() {
@@ -284,7 +331,8 @@ func printAgents() {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -330,7 +378,8 @@ func createAgent(name, role, model, provider string) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -341,7 +390,8 @@ func createAgent(name, role, model, provider string) {
 		fmt.Printf("Agent '%s' created successfully (ID: %d)\n", name, int(result["id"].(float64)))
 	} else {
 		fmt.Printf("Failed to create agent: %v\n", result)
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 }
 
@@ -351,7 +401,8 @@ func deleteAgent(id int) {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -362,7 +413,8 @@ func deleteAgent(id int) {
 		fmt.Printf("Agent %d deleted successfully\n", id)
 	} else {
 		fmt.Printf("Failed to delete agent: %v\n", result)
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 }
 
@@ -371,7 +423,8 @@ func printContainers() {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 	defer resp.Body.Close()
 
@@ -433,7 +486,8 @@ func handleService(action string) {
 	err := cmd.Run()
 	if err != nil {
 		fmt.Printf("Failed to %s service: %v\n", action, err)
-		os.Exit(1)
+		exitFunc(1)
+		return
 	}
 	fmt.Println("Done.")
 }
