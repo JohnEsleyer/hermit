@@ -75,15 +75,19 @@ if command -v apt-get &> /dev/null; then
         print_success "Docker installed. You may need to logout/login for group changes to take effect."
     fi
     
-    # Install Node.js if not present
-    if ! command -v node &> /dev/null; then
-        print_info "Installing Node.js..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
+    # Install Bun for frontend builds
+    if ! command -v bun &> /dev/null; then
+        print_info "Installing Bun..."
+        curl -fsSL https://bun.sh/install | bash
     fi
     
-    # Add Node.js to PATH for this session
-    export PATH=$PATH:/usr/bin/nodejs/bin:/usr/local/bin
+    # Add Bun to PATH permanently
+    if ! grep -q 'bun/install' ~/.bashrc 2>/dev/null; then
+        echo 'export BUN_INSTALL="$HOME/.bun"' >> ~/.bashrc
+        echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> ~/.bashrc
+    fi
+    export BUN_INSTALL="$HOME/.bun"
+    export PATH="$BUN_INSTALL/bin:$PATH"
     
     # Install Go if not present
     if ! command -v go &> /dev/null; then
@@ -92,8 +96,13 @@ if command -v apt-get &> /dev/null; then
         sudo rm -rf /usr/local/go
         sudo tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
         rm go1.25.0.linux-amd64.tar.gz
-        export PATH=$PATH:/usr/local/go/bin
     fi
+    
+    # Add Go to PATH permanently
+    if ! grep -q '/usr/local/go/bin' ~/.bashrc 2>/dev/null; then
+        echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+    fi
+    export PATH=$PATH:/usr/local/go/bin
 
 elif [[ "$OS" == "macos" ]]; then
     # Install Homebrew if not present
@@ -139,11 +148,11 @@ print_info "Installing frontend dependencies..."
 
 if [ -d "dashboard" ]; then
     cd dashboard
-    npm install --silent 2>/dev/null || npm install
+    bun install --silent 2>/dev/null || bun install
     cd ..
     print_success "Frontend dependencies installed!"
 else
-    print_warning "Dashboard directory not found, skipping npm install"
+    print_warning "Dashboard directory not found, skipping bun install"
 fi
 
 # ============================================
@@ -155,7 +164,7 @@ print_info "Building the application..."
 if [ -d "dashboard" ]; then
     print_info "Building frontend..."
     cd dashboard
-    npm run build
+    bun run build
     cd ..
     print_success "Frontend built!"
 fi

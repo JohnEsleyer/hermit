@@ -24,6 +24,14 @@ var version = "v0.4.1"
 func main() {
 	port := getEnv("PORT", "3000")
 	dbPath := getEnv("DATABASE_PATH", "./data/hermit.db")
+
+	// Convert to absolute path if relative
+	if !filepath.IsAbs(dbPath) {
+		absPath, err := filepath.Abs(dbPath)
+		if err == nil {
+			dbPath = absPath
+		}
+	}
 	telegramToken := getEnv("TELEGRAM_BOT_TOKEN", "")
 	llmProvider := getEnv("LLM_PROVIDER", "openrouter")
 	llmModel := getEnv("LLM_MODEL", "openai/gpt-5.2")
