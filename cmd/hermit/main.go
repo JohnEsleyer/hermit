@@ -22,7 +22,7 @@ import (
 
 // version represents the current release of HermitShell server.
 // Using Major.Minor.Patch versioning scheme.
-var version = "v0.4.4"
+var version = "v0.5.0"
 
 // main is the entry point for the HermitShell server.
 // It initializes dependencies and starts the Go Fiber API server.
@@ -387,7 +387,7 @@ func ensureEnvFile() {
 	content := `# HermitShell Configuration
 PORT=3000
 DATABASE_PATH=./data/hermit.db
-HERMIT_API_BASE=http://localhost:3000
+HERMIT_API_BASE=http://127.0.0.1:3000
 HERMIT_CLI_USER=admin
 HERMIT_CLI_PASS=hermit123
 

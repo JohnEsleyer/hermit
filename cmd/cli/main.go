@@ -18,7 +18,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-var apiBase = "http://localhost:3000"
+var apiBase = "http://127.0.0.1:3000"
 var version = "v0.5.0"
 var exitFunc = os.Exit
 
