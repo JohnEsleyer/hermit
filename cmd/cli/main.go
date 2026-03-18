@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -55,12 +56,19 @@ func clearCredentials() {
 }
 
 func login(username, password string) bool {
-	reqBody := fmt.Sprintf(`{"username":"%s","password":"%s"}`, username, password)
-	req, _ := http.NewRequest("POST", apiBase+"/api/auth/login", strings.NewReader(reqBody))
+	// Use JSON encoding for safer request bodies
+	reqData := map[string]string{
+		"username": username,
+		"password": password,
+	}
+	jsonData, _ := json.Marshal(reqData)
+
+	req, _ := http.NewRequest("POST", apiBase+"/api/auth/login", bytes.NewBuffer(jsonData))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nConnection Error: %v (Host: %s)\n", err, apiBase)
 		return false
 	}
 	defer resp.Body.Close()
@@ -102,6 +110,9 @@ func promptLogin() {
 
 func main() {
 	godotenv.Load()
+	if envBase := os.Getenv("HERMIT_API_BASE"); envBase != "" {
+		apiBase = envBase
+	}
 
 	// Handle logout first - doesn't require being logged in
 	if len(os.Args) >= 2 && os.Args[1] == "logout" {
@@ -110,20 +121,35 @@ func main() {
 		return
 	}
 
+	// 1. Try saved credentials
 	creds, err := loadCredentials()
 	if err == nil && creds.Username != "" && creds.Password != "" {
 		fmt.Print("Auto-login...")
 		if login(creds.Username, creds.Password) {
 			fmt.Println(" OK")
-		} else {
-			fmt.Println(" failed")
-			clearCredentials()
-			promptLogin()
+			runCLI()
+			return
 		}
-	} else {
-		promptLogin()
+		fmt.Println(" failed")
+		clearCredentials()
 	}
 
+	// 2. Try environment variables
+	envUser := os.Getenv("HERMIT_CLI_USER")
+	envPass := os.Getenv("HERMIT_CLI_PASS")
+	if envUser != "" && envPass != "" {
+		fmt.Printf("Logging in as %s from environment...", envUser)
+		if login(envUser, envPass) {
+			fmt.Println(" OK")
+			saveCredentials(envUser, envPass)
+			runCLI()
+			return
+		}
+		fmt.Println(" failed")
+	}
+
+	// 3. Prompt user
+	promptLogin()
 	runCLI()
 }
 
