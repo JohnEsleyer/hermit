@@ -1,19 +1,132 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/user"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
+
+	"github.com/joho/godotenv"
 )
 
 var apiBase = "http://localhost:3000"
 
+type Credentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func getCredsPath() string {
+	usr, _ := user.Current()
+	dir := filepath.Join(usr.HomeDir, ".hermit")
+	os.MkdirAll(dir, 0700)
+	return filepath.Join(dir, "credentials")
+}
+
+func saveCredentials(username, password string) error {
+	creds := Credentials{Username: username, Password: password}
+	data, err := json.Marshal(creds)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(getCredsPath(), data, 0600)
+}
+
+func loadCredentials() (Credentials, error) {
+	data, err := os.ReadFile(getCredsPath())
+	if err != nil {
+		return Credentials{}, err
+	}
+	var creds Credentials
+	err = json.Unmarshal(data, &creds)
+	return creds, err
+}
+
+func clearCredentials() {
+	os.Remove(getCredsPath())
+}
+
+func login(username, password string) bool {
+	reqBody := fmt.Sprintf(`{"username":"%s","password":"%s"}`, username, password)
+	req, _ := http.NewRequest("POST", apiBase+"/api/auth/login", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if success, ok := result["success"].(bool); ok && success {
+		return true
+	}
+	return false
+}
+
+func promptLogin() {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Print("Username: ")
+	username, _ := reader.ReadString('\n')
+	username = strings.TrimSpace(username)
+
+	fmt.Print("Password: ")
+	password, _ := reader.ReadString('\n')
+	password = strings.TrimSpace(password)
+
+	if username == "" || password == "" {
+		fmt.Println("Username and password required")
+		os.Exit(1)
+	}
+
+	fmt.Print("Logging in...")
+	if !login(username, password) {
+		fmt.Println(" failed")
+		fmt.Println("Invalid credentials")
+		os.Exit(1)
+	}
+	fmt.Println(" OK")
+	saveCredentials(username, password)
+}
+
 func main() {
+	godotenv.Load()
+
+	// Handle logout first - doesn't require being logged in
+	if len(os.Args) >= 2 && os.Args[1] == "logout" {
+		clearCredentials()
+		fmt.Println("Logged out successfully")
+		return
+	}
+
+	creds, err := loadCredentials()
+	if err == nil && creds.Username != "" && creds.Password != "" {
+		fmt.Print("Auto-login...")
+		if login(creds.Username, creds.Password) {
+			fmt.Println(" OK")
+		} else {
+			fmt.Println(" failed")
+			clearCredentials()
+			promptLogin()
+		}
+	} else {
+		promptLogin()
+	}
+
+	runCLI()
+}
+
+func runCLI() {
 	agentsCmd := flag.NewFlagSet("agents", flag.ExitOnError)
 	agentsListCmd := flag.NewFlagSet("list", flag.ExitOnError)
 	agentsCreateCmd := flag.NewFlagSet("create", flag.ExitOnError)
@@ -24,8 +137,6 @@ func main() {
 
 	tunnelCmd := flag.NewFlagSet("tunnel", flag.ExitOnError)
 
-	loginCmd := flag.NewFlagSet("login", flag.ExitOnError)
-
 	flag.Usage = func() {
 		fmt.Println("Hermit CLI - AI Agent Orchestrator")
 		fmt.Println("")
@@ -35,14 +146,13 @@ func main() {
 		fmt.Println("  agents      Manage agents")
 		fmt.Println("  containers  Manage containers")
 		fmt.Println("  tunnel      Get tunnel URL")
-		fmt.Println("  login       Login to dashboard")
+		fmt.Println("  logout      Logout and clear credentials")
 		fmt.Println("  help        Show this help message")
 		fmt.Println("")
 		fmt.Println("Examples:")
 		fmt.Println("  hermit-cli agents list")
 		fmt.Println("  hermit-cli agents create --name rain --model gpt-4")
 		fmt.Println("  hermit-cli tunnel")
-		fmt.Println("  hermit-cli login --user admin --pass hermit123")
 	}
 
 	if len(os.Args) < 2 {
@@ -51,14 +161,16 @@ func main() {
 	}
 
 	switch os.Args[1] {
+	case "logout":
+		clearCredentials()
+		fmt.Println("Logged out successfully")
+		return
 	case "agents":
 		handleAgents(os.Args[2:], agentsCmd, agentsListCmd, agentsCreateCmd, agentsDeleteCmd)
 	case "containers":
 		handleContainers(os.Args[2:], containersCmd, containersListCmd)
 	case "tunnel":
 		handleTunnel(tunnelCmd)
-	case "login":
-		handleLogin(loginCmd)
 	case "help", "-h", "--help":
 		flag.Usage()
 	default:
@@ -66,13 +178,6 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-}
-
-func getEnv(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
 
 func handleAgents(args []string, parent, list, create, delete *flag.FlagSet) {
@@ -129,38 +234,6 @@ func handleTunnel(tunnel *flag.FlagSet) {
 		fmt.Println(url)
 	} else {
 		fmt.Println("Tunnel not available")
-		os.Exit(1)
-	}
-}
-
-func handleLogin(login *flag.FlagSet) {
-	username := login.String("user", "", "Username")
-	password := login.String("pass", "", "Password")
-	login.Parse(os.Args[2:])
-
-	if *username == "" || *password == "" {
-		fmt.Println("Error: --user and --pass are required")
-		os.Exit(1)
-	}
-
-	reqBody := fmt.Sprintf(`{"username":"%s","password":"%s"}`, *username, *password)
-	req, _ := http.NewRequest("POST", apiBase+"/api/auth/login", strings.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
-
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-
-	if success, ok := result["success"].(bool); ok && success {
-		fmt.Println("Login successful!")
-	} else {
-		fmt.Println("Login failed")
 		os.Exit(1)
 	}
 }
