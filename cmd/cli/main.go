@@ -19,8 +19,13 @@ import (
 )
 
 var apiBase = "http://127.0.0.1:3000"
-var version = "v0.5.0"
+var version = "v0.6.0"
 var exitFunc = os.Exit
+
+const (
+	defaultUsername = "admin"
+	defaultPassword = "hermit123"
+)
 
 type Credentials struct {
 	Username string `json:"username"`
@@ -87,9 +92,12 @@ func login(username, password string) bool {
 func promptLogin() {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Print("Username: ")
+	fmt.Printf("Username (default: %s): ", defaultUsername)
 	username, _ := reader.ReadString('\n')
 	username = strings.TrimSpace(username)
+	if username == "" {
+		username = defaultUsername
+	}
 
 	fmt.Print("Password: ")
 	password, _ := reader.ReadString('\n')
@@ -152,7 +160,21 @@ func main() {
 		fmt.Println(" failed")
 	}
 
-	// 3. Prompt user
+	// 3. Show default credentials for first-time users
+	fmt.Println("")
+	fmt.Println("╔════════════════════════════════════════════════════════════════╗")
+	fmt.Println("║           Welcome to HermitShell - First Time Setup            ║")
+	fmt.Println("╠════════════════════════════════════════════════════════════════╣")
+	fmt.Println("║  Default credentials:                                          ║")
+	fmt.Println("║    Username: admin                                              ║")
+	fmt.Println("║    Password: hermit123                                          ║")
+	fmt.Println("║                                                                ║")
+	fmt.Println("║  ⚠️  IMPORTANT: Change these credentials in the dashboard!       ║")
+	fmt.Println("║     Go to Settings > Security to update your password.         ║")
+	fmt.Println("╚════════════════════════════════════════════════════════════════╝")
+	fmt.Println("")
+
+	// 4. Prompt user
 	promptLogin()
 	runCLI()
 }

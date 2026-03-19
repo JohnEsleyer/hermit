@@ -1,4 +1,4 @@
-// Hermit Dashboard - React Frontend
+// HermitShell Dashboard - React Frontend
 // Documentation:
 // - frontend-deployment.md: Build process, Vite configuration
 // - frontend-backend-communication.md: API calls, authentication flow
@@ -66,6 +66,8 @@ export default function App() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [showLogin, setShowLogin] = useState(true);
+  const [loginError, setLoginError] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const triggerToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     const id = Date.now();
@@ -130,6 +132,8 @@ export default function App() {
   };
 
   const handleLogin = async (username: string, password: string) => {
+    setLoginError('');
+    setIsLoggingIn(true);
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
@@ -145,17 +149,21 @@ export default function App() {
           triggerToast('Please change your password', 'info');
         }
       } else {
-        triggerToast(data.error || 'Login failed', 'error');
+        setLoginError(data.error || 'Invalid username or password');
       }
     } catch (err) {
-      triggerToast('Login failed', 'error');
+      setLoginError('Connection failed. Please ensure the server is running.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
   if (showLogin) {
     return (
       <LoginScreen 
-        onLogin={handleLogin} 
+        onLogin={handleLogin}
+        error={loginError}
+        isLoading={isLoggingIn}
       />
     );
   }
@@ -224,9 +232,29 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
+interface LoginScreenProps {
+  onLogin: (u: string, p: string) => void;
+  error?: string;
+  isLoading?: boolean;
+}
+
+function LoginScreen({ onLogin, error = '', isLoading = false }: LoginScreenProps) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [localError, setLocalError] = useState(error);
+
+  useEffect(() => {
+    setLocalError(error);
+  }, [error]);
+
+  const handleLogin = () => {
+    if (!username || !password) {
+      setLocalError('Username and password are required');
+      return;
+    }
+    setLocalError('');
+    onLogin(username, password);
+  };
 
   return (
     <div className="h-screen w-full flex items-center justify-center bg-black">
@@ -243,9 +271,15 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
             <circle cx="42" cy="45" r="5" fill="black" />
             <circle cx="60" cy="45" r="5" fill="black" />
           </svg>
-          <h1 className="text-4xl font-black tracking-tighter">HERMIT</h1>
+          <h1 className="text-4xl font-black tracking-tighter">HERMITSHELL</h1>
           <p className="text-zinc-500 mt-2">Agent Orchestration System</p>
         </div>
+
+        {localError && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl">
+            <p className="text-red-400 text-sm text-center">{localError}</p>
+          </div>
+        )}
 
         <div className="space-y-4">
           <div>
@@ -255,7 +289,8 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
               autoComplete="off"
               placeholder="admin"
               value={username}
-              onChange={e => setUsername(e.target.value)}
+              onChange={e => { setUsername(e.target.value); setLocalError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
               className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 placeholder:text-zinc-600"
             />
           </div>
@@ -266,16 +301,33 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
               autoComplete="off"
               placeholder="hermit123"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={e => { setPassword(e.target.value); setLocalError(''); }}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
               className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 placeholder:text-zinc-600"
             />
           </div>
           <button 
-            onClick={() => onLogin(username, password)}
-            className="w-full bg-white text-black py-4 rounded-full font-bold mt-4 hover:bg-zinc-200 transition-colors"
+            onClick={handleLogin}
+            disabled={isLoading}
+            className="w-full bg-white text-black py-4 rounded-full font-bold mt-4 hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            Login
+            {isLoading ? (
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Logging in...
+              </>
+            ) : 'Login'}
           </button>
+        </div>
+
+        <div className="mt-6 p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800">
+          <p className="text-xs text-zinc-500 text-center">
+            <span className="text-yellow-400 font-medium">First time?</span> Default credentials are admin / hermit123.
+            Please change your password after login in Settings &gt; Security.
+          </p>
         </div>
       </div>
     </div>
