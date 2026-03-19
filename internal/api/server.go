@@ -256,6 +256,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Put("/agents/:id", s.HandleUpdateAgent)
 	api.Delete("/agents/:id", s.HandleDeleteAgent)
 	api.Post("/agents/:id/action", s.HandleAgentAction)
+	api.Post("/agents/:id/chat", s.HandleAgentChat)
 	api.Get("/agents/:id/logs", s.HandleGetAgentLogs)
 	api.Get("/agents/:id/stats", s.HandleGetAgentStats)
 
@@ -312,6 +313,104 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Get("/agents/:id/apps", s.HandleListApps)
 
 	s.setupStaticRoutes(app)
+}
+
+// HandleAgentChat handles incoming chat messages from mobile client / web HTTP
+func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
+	agentID, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	agent, err := s.db.GetAgent(agentID)
+	if err != nil || agent == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
+	}
+
+	var req struct{ Message string `json:"message"` }
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	userText := strings.TrimSpace(req.Message)
+	if userText == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Message cannot be empty"})
+	}
+
+	userID := "mobile"
+	chatID := "mobile-chat"
+	tempBot := telegram.NewBot(agent.TelegramToken)
+
+	authHeader := c.Get("Authorization")
+	session := strings.TrimPrefix(authHeader, "Bearer ")
+	if session == "" {
+		session = c.Cookies("session")
+	}
+	if session != "" {
+		userID = session
+	}
+
+	timeOffset, _ := s.db.GetSetting("time_offset")
+	offsetHours := 0
+	if timeOffset != "" {
+		fmt.Sscanf(timeOffset, "%d", &offsetHours)
+	}
+	currentTime := time.Now().Add(time.Duration(offsetHours) * time.Hour)
+	userTextWithTime := fmt.Sprintf("[Current time: %s] %s", currentTime.Format("2006-01-02 15:04:05"), userText)
+
+	s.db.LogAction(agent.ID, "agent", "ai_processing", fmt.Sprintf("Processing HTTP chat message from user %s", userID))
+
+	history, _ := s.db.GetHistory(agent.ID, 10)
+	var messages []llm.Message
+
+	systemPrompt := agent.Personality
+	contextPath := "./context.md"
+	if content, err := os.ReadFile(contextPath); err == nil {
+		contextStr := string(content)
+		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
+		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
+		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+		systemPrompt = contextStr + "\n\n---\n\n" + agent.Personality
+	}
+
+	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
+	messages = append(messages, llm.Message{Role: "user", Content: userTextWithTime})
+
+	for i := len(history) - 1; i >= 0; i-- {
+		h := history[i]
+		role := h.Role
+		if role == "system" {
+			role = "user"
+		}
+		messages = append(messages, llm.Message{Role: role, Content: h.Content})
+	}
+
+	client := s.getLLMClientForAgent(agent)
+	if client == nil {
+		s.db.AddHistory(agent.ID, "system", "system", "Error: LLM client not configured")
+		return c.Status(500).JSON(fiber.Map{"error": "LLM client not configured"})
+	}
+
+	s.db.LogAction(agent.ID, "network", "llm_request", fmt.Sprintf("Provider: %s, Model: %s, Messages: %d", agent.Provider, agent.Model, len(messages)))
+
+	response, err := client.Chat(agent.Model, messages)
+
+	s.db.IncrementLLMAPICalls(agent.ID)
+	contextWindow := getModelContextWindow(agent.Model)
+	s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
+
+	if err != nil {
+		s.db.AddHistory(agent.ID, "system", "system", "LLM Error: "+err.Error())
+		return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
+	}
+
+	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
+	s.db.AddHistory(agent.ID, userID, "user", userText)
+	s.db.AddHistory(agent.ID, "assistant", "assistant", response)
+
+	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, tempBot)
+	if len(feedback) > 0 {
+		feedbackJSON, _ := json.Marshal(feedback)
+		s.db.AddHistory(agent.ID, "system", "system", string(feedbackJSON)+"\n<end>")
+	}
+
+	return c.JSON(fiber.Map{"response": response})
 }
 
 func (s *Server) HandleServeApp(c *fiber.Ctx) error {
@@ -457,7 +556,11 @@ func (s *Server) HandleLogin(c *fiber.Ctx) error {
 		HTTPOnly: true,
 	})
 
-	return c.JSON(fiber.Map{"success": true, "mustChangePassword": mustChange})
+	return c.JSON(fiber.Map{
+		"success":            true,
+		"token":              fmt.Sprintf("%d", id),
+		"mustChangePassword": mustChange,
+	})
 }
 
 func (s *Server) HandleLogout(c *fiber.Ctx) error {
@@ -467,6 +570,12 @@ func (s *Server) HandleLogout(c *fiber.Ctx) error {
 
 func (s *Server) HandleCheckAuth(c *fiber.Ctx) error {
 	session := c.Cookies("session")
+	if session == "" {
+		authHeader := c.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			session = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
 	if session == "" {
 		return c.JSON(fiber.Map{"authenticated": false})
 	}
