@@ -106,11 +106,9 @@ func (s *Server) setupRoutes(app *fiber.App) {
     api.Get("/backup/export", s.HandleExportBackup)
     api.Post("/backup/import", s.HandleImportBackup)
 
-    // Telegram and Webhooks
+    // Telegram (long polling - no webhook routes needed)
     api.Post("/telegram/send-code", s.HandleTelegramSendCode)
     api.Post("/telegram/verify", s.HandleTelegramVerify)
-    api.Post("/webhook", s.HandleWebhook)
-    api.Post("/webhook/:agentId", s.HandleAgentWebhook)
 
     // Static file serving
     s.setupStaticRoutes(app)

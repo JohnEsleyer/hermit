@@ -2,7 +2,19 @@
 
 ## Overview
 
-Hermit agents communicate with users via Telegram. The system uses Telegram Bot API webhooks for receiving messages and sends messages using the Bot API.
+HermitShell agents communicate with users via Telegram using **long polling** for receiving messages. This approach prioritizes architectural simplicity and resilience over the slight efficiency gains of webhooks.
+
+**Why Long Polling?**
+
+| Aspect | Webhooks | Long Polling |
+|--------|----------|--------------|
+| Setup complexity | Requires public URL + verification | Works on localhost |
+| Server restart | Messages lost or need queue | Messages queued by Telegram |
+| Development | Need tunnel/ngrok | Test locally |
+| Code complexity | ~50 lines + signature validation | ~15 lines |
+| Latency | Real-time | 0-30 seconds (configurable) |
+
+For a lightweight, easy-to-setup system like HermitShell, long polling provides the best balance of simplicity and reliability.
 
 ## High-Level Flow
 
@@ -10,213 +22,180 @@ Hermit agents communicate with users via Telegram. The system uses Telegram Bot 
 Telegram User
      │
      ▼
-┌─────────────────────┐
-│  Telegram Server    │
-│  (webhook push)    │
-└─────────┬───────────┘
-          │ POST /api/webhook/:agentId
-          ▼
-┌─────────────────────┐
-│ HandleAgentWebhook  │
-│ (server.go)        │
-└─────────┬───────────┘
-          │
-    ┌─────┴─────┐
-    │ Auth      │
-    │ Check     │
-    └─────┬─────┘
-          │
-          ▼ (if allowed)
-┌─────────────────────┐
-│  Command or        │
-│  AI Processing    │
-└─────────┬───────────┘
-          │
-    ┌─────┴────────────────────┐
-    │                           │
-    ▼                           ▼
-┌───────────┐          ┌───────────────┐
-│ /status   │          │ processAgent  │
-│ /help     │          │ AIRequest     │
-│ /clear    │          │ (LLM)         │
-│ /reset    │          └───────┬───────┘
-│ /takeover │                  │
-└───────────┘          ┌───────┴───────┐
-                      │               │
-                      ▼               ▼
-              ┌───────────────┐ ┌─────────────┐
-              │ ExecuteXML   │ │ Send Message│
-              │ Payload      │ │ (telegram)  │
-              └──────────────┘ └─────────────┘
+┌─────────────────────────────────────┐
+│  HermitShell Server                 │
+│                                     │
+│  Telegram Server ◄────── Long Poll  │
+│  (getUpdates)      │               │
+│                    │               │
+│              ┌─────┴─────┐        │
+│              │ Process   │        │
+│              │ Messages  │        │
+│              └─────┬─────┘        │
+│                    │               │
+│              ┌─────┴─────┐        │
+│              │           │        │
+│              ▼           ▼        │
+│         Commands     AI Processing │
+│         (status,     (LLM call    │
+│          help, etc)   + XML)       │
+└─────────────────────────────────────┘
 ```
+
+## Architecture
+
+### Polling Manager
+
+Each agent with a Telegram token runs a dedicated polling goroutine:
+
+```
+┌──────────────────────────────────────────────┐
+│ Server                                      │
+│                                             │
+│  ┌─────────────────────────────────────┐   │
+│  │ Polling Manager                      │   │
+│  │                                      │   │
+│  │  pollers map[agentID]cancelFunc     │   │
+│  │                                      │   │
+│  │  ┌─────────────┐  ┌─────────────┐   │   │
+│  │  │ Agent 1     │  │ Agent 2     │   │   │
+│  │  │ Poller     │  │ Poller     │   │   │
+│  │  │ (goroutine)│  │ (goroutine)│   │   │
+│  │  └─────┬───────┘  └─────┬───────┘   │   │
+│  │        │                │           │   │
+│  └────────┼────────────────┼───────────┘   │
+│           ▼                ▼               │
+│     Telegram API ◄──── getUpdates()        │
+└────────────────────────────────────────────┘
+```
+
+### Key Functions
+
+| Function | Purpose |
+|---------|---------|
+| `StartPollingForAgent()` | Start a polling goroutine for an agent |
+| `StopPollingForAgent()` | Stop the polling goroutine |
+| `StartAgentPoller()` | Main polling loop (delete webhook, get updates, process) |
+| `ProcessTelegramUpdate()` | Handle incoming message (auth, commands, AI) |
 
 ## Code Flow
 
 ### 1. Telegram Bot (Library)
+
 **File: `internal/telegram/telegram.go`**
+
 ```go
-type Bot struct {
-    token  string
-    apiURL string
-    http   *http.Client
+// DeleteWebhook removes any existing webhook before polling.
+// Required because Telegram blocks getUpdates when webhook is active.
+func (b *Bot) DeleteWebhook() error {
+    url := fmt.Sprintf("%s/bot%s/deleteWebhook", b.apiURL, b.token)
+    resp, err := b.http.Get(url)
+    defer resp.Body.Close()
+    return err
 }
 
-func NewBot(token string) *Bot {
-    return &Bot{
-        token:  token,
-        apiURL: "https://api.telegram.org",
-        http: &http.Client{Timeout: 30 * time.Second},
-    }
-}
-
-// Send a message to a chat
-func (b *Bot) SendMessage(chatID, text string) error {
-    req := SendMessageRequest{
-        ChatID: chatID,
-        Text:   text,
-    }
-    body, _ := json.Marshal(req)
-    
-    url := fmt.Sprintf("%s/bot%s/sendMessage", b.apiURL, b.token)
-    resp, err := b.http.Post(url, "application/json", bytes.NewReader(body))
+// GetUpdates performs long polling to fetch updates from Telegram.
+// offset: last update_id + 1 to acknowledge processed updates.
+// timeout: seconds to wait (long polling duration).
+func (b *Bot) GetUpdates(offset int64, timeout int) ([]Update, error) {
+    url := fmt.Sprintf("%s/bot%s/getUpdates?offset=%d&timeout=%d", 
+        b.apiURL, b.token, offset, timeout)
+    resp, err := b.http.Get(url)
     defer resp.Body.Close()
     
-    if resp.StatusCode != http.StatusOK {
-        return fmt.Errorf("API error: %d", resp.StatusCode)
+    var result struct {
+        OK     bool      `json:"ok"`
+        Result []Update  `json:"result"`
     }
-    return nil
+    json.NewDecoder(resp.Body).Decode(&result)
+    return result.Result, nil
 }
 ```
 
-### 2. Webhook Handler
+### 2. Polling Loop
+
 **File: `internal/api/server.go`**
+
 ```go
-func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
-    agentId, _ := strconv.ParseInt(c.Params("agentId"), 10, 64)
-    agent, _ := s.db.GetAgent(agentId)
-
-    // Parse Telegram update
-    var update telegram.Update
-    c.BodyParser(&update)
-
-    chatID := fmt.Sprintf("%d", update.Message.Chat.ID)
-    userText := strings.TrimSpace(update.Message.Text)
-    userID := fmt.Sprintf("%d", update.Message.From.ID)
-
-    // Authorization check
-    allowed := false
-    if agent.AllowedUsers == "" {
-        allowed = true  // No restrictions
-    } else {
-        // Check if userID or username in allowed list
-        allowedUsers := strings.Split(agent.AllowedUsers, ",")
-        for _, u := range allowedUsers {
-            if strings.TrimSpace(u) == userID || 
-               strings.TrimSpace(u) == update.Message.From.Username {
-                allowed = true
-                break
+func (s *Server) StartAgentPoller(ctx context.Context, agent *db.Agent) {
+    bot := telegram.NewBot(agent.TelegramToken)
+    
+    // Clear any existing webhook before polling
+    bot.DeleteWebhook()
+    
+    var offset int64 = 0
+    
+    for {
+        select {
+        case <-ctx.Done():
+            log.Printf("Agent %s: Stopping Telegram poller", agent.Name)
+            return
+        default:
+            // 30 second timeout for long polling
+            updates, err := bot.GetUpdates(offset, 30)
+            if err != nil {
+                log.Printf("Agent %s: Polling error: %v", agent.Name, err)
+                time.Sleep(5 * time.Second) // backoff on error
+                continue
+            }
+            
+            for _, update := range updates {
+                if update.UpdateID >= offset {
+                    offset = update.UpdateID + 1 // Advance offset
+                }
+                // Process update concurrently
+                go s.ProcessTelegramUpdate(agent, update)
             }
         }
     }
+}
+```
 
+### 3. Message Processing
+
+**File: `internal/api/server.go`**
+
+```go
+func (s *Server) ProcessTelegramUpdate(agent *db.Agent, update telegram.Update) {
+    if update.Message == nil || update.Message.Text == "" {
+        return
+    }
+    
+    chatID := fmt.Sprintf("%d", update.Message.Chat.ID)
+    userText := strings.TrimSpace(update.Message.Text)
+    userID := fmt.Sprintf("%d", update.Message.From.ID)
+    
+    // Authorization check
+    allowed := s.checkUserAuthorization(agent, userID, update.Message.From.Username)
+    
     if !allowed {
         bot := telegram.NewBot(agent.TelegramToken)
         bot.SendMessage(chatID, "You are not authorized to use this agent.")
-        return c.SendStatus(200)
+        return
     }
-
+    
     // Handle commands or pass to AI
     if strings.HasPrefix(userText, "/") {
-        return s.handleAgentCommand(agent, chatID, userText)
+        s.handleAgentCommand(agent, chatID, userText)
+        return
     }
-
-    // Save to history and process with AI
-    s.db.AddHistory(agentId, userID, "user", userText)
+    
+    // Process with AI
+    s.db.AddHistory(agent.ID, userID, "user", userText)
     go s.processAgentAIRequest(agent, chatID, userID, userText)
-
-    return c.SendStatus(200)
 }
 ```
 
-### 3. Agent Command Handler
-**File: `internal/api/server.go`**
-```go
-func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error {
-    bot := telegram.NewBot(agent.TelegramToken)
-    cmd := strings.Split(text, " ")[0]
+## Agent Lifecycle Integration
 
-    switch cmd {
-    case "/status":
-        statusMsg := fmt.Sprintf("Agent: %s\nModel: %s\nProvider: %s", 
-            agent.Name, agent.Model, agent.Provider)
-        bot.SendMessage(chatID, statusMsg)
+Polling is automatically managed based on agent state:
 
-    case "/help":
-        bot.SendMessage(chatID, "Commands: /status, /help, /clear, /reset, /takeover")
-
-    case "/clear":
-        s.db.ClearHistory(agent.ID)
-        bot.SendMessage(chatID, "Context cleared!")
-
-    case "/reset":
-        if agent.ContainerID != "" {
-            s.docker.Stop(agent.ContainerID)
-            s.docker.Remove(agent.ContainerID)
-        }
-        bot.SendMessage(chatID, "Container reset.")
-
-    case "/takeover":
-        // Toggle manual XML input mode
-        s.mu.Lock()
-        s.takeoverMode[chatID] = !s.takeoverMode[chatID]
-        s.mu.Unlock()
-        bot.SendMessage(chatID, "Takeover mode: " + 
-            map[bool]string{true: "ON", false: "OFF"}[s.takeoverMode[chatID]])
-    }
-    return nil
-}
-```
-
-### 4. AI Request Processing
-**File: `internal/api/server.go`**
-```go
-func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText string) {
-    bot := telegram.NewBot(agent.TelegramToken)
-
-    // Send "thinking" message
-    bot.SendMessage(chatID, "Thinking...")
-
-    // Get LLM client
-    client := s.getLLMClientForAgent(agent)
-
-    // Build messages with history
-    history, _ := s.db.GetHistory(agent.ID, 10)
-    var messages []llm.Message
-    messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
-    // Add history...
-
-    // Call LLM
-    response, err := client.Chat(agent.Model, messages)
-
-    // Execute XML actions from response
-    feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, bot)
-
-    // Save to history
-    s.db.AddHistory(agent.ID, "assistant", "assistant", response)
-}
-```
-
-## Cheatsheet
-
-| Operation | File | Function |
-|-----------|------|----------|
-| Bot Library | `telegram.go` | `Bot` struct |
-| Send Message | `telegram.go:113` | `Bot.SendMessage` |
-| Send Document | `telegram.go:189` | `Bot.SendDocument` |
-| Webhook Handler | `server.go:1765` | `HandleAgentWebhook` |
-| Command Handler | `server.go:1851` | `handleAgentCommand` |
-| AI Processing | `server.go:1957` | `processAgentAIRequest` |
-| XML Execution | `server.go:2167` | `ExecuteXMLPayload` |
+| Event | Action |
+|-------|--------|
+| Agent created with Telegram token | Start polling |
+| Telegram token updated | Restart polling |
+| Agent deleted | Stop polling |
+| Server starts | Start polling for all agents with tokens |
 
 ## Telegram Commands
 
@@ -224,7 +203,7 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 |---------|-------------|
 | `/start` | Welcome message |
 | `/help` | Show available commands |
-| `/status` | Show agent configuration |
+| `/status` | Show agent configuration and polling status |
 | `/clear` | Clear chat history |
 | `/reset` | Reset container |
 | `/takeover` | Toggle manual XML mode |
@@ -242,6 +221,6 @@ allowed_users: "123456789,username1,username2"
 ## Related Files
 
 - Telegram Bot Library: `internal/telegram/telegram.go`
-- Webhook Handler: `internal/api/server.go` (lines 1765-1849)
-- Command Handler: `internal/api/server.go` (lines 1851-1955)
-- AI Processing: `internal/api/server.go` (lines 1957-2041)
+- Polling Manager: `internal/api/server.go` (StartAgentPoller, ProcessTelegramUpdate)
+- Command Handler: `internal/api/server.go` (handleAgentCommand)
+- AI Processing: `internal/api/server.go` (processAgentAIRequest)

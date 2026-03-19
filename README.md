@@ -116,13 +116,13 @@ HermitShell/
 │   ├── hermit/           # Server implementation
 │   └── cli/              # hermitshell CLI implementation
 ├── internal/
-│   ├── api/              # HTTP Handlers (Dashboard, Webhooks, Telegram)
-│   ├── cloudflare/       # Cloudflare Tunnel integration
+│   ├── api/              # HTTP Handlers (Dashboard, Telegram)
+│   ├── cloudflare/       # Cloudflare Tunnel integration (optional)
 │   ├── db/               # SQLite database layer
 │   ├── docker/           # Docker orchestration (exec, spawn)
 │   ├── llm/              # LLM client (OpenAI, Anthropic, Gemini, OpenRouter)
 │   ├── parser/           # XML contract parser
-│   ├── telegram/         # Bot API and webhook management
+│   ├── telegram/         # Bot API and long polling
 │   └── workspace/        # File I/O operations
 ├── dashboard/            # React frontend (Vite + Tailwind)
 ├── hermit-server        # Main server binary
@@ -157,7 +157,7 @@ Each agent runs in an isolated Docker container with:
 
 ## Telegram Integration
 
-- Webhook-based message handling
+- Long polling for message handling (architectural simplicity)
 - Per-agent bot configuration
 - User allowlist security
 - Commands: `/status`, `/help`, `/clear`, `/reset`, `/takeover`
@@ -172,7 +172,7 @@ Each agent runs in an isolated Docker container with:
 • Context Window: `1048576` tokens
 • LLM API Calls: `42`
 • Container: `agent-rain` (Running ✅)
-• Webhook: Active ✅
+• Connection: Long Polling Active ✅
 ```
 
 ---

@@ -183,17 +183,18 @@ function addTask() {
 
 ---
 
-## Webhook & Tunnel Resilience
+## Polling & Tunnel Resilience
 
-On startup (`./hermit`):
+HermitShell uses long polling for Telegram (no webhook needed). Tunnels are optional for remote dashboard access.
 
-1. Dashboard starts
-2. Dashboard public URL is created (cloudflared tunnel or domain)
-3. Agent start creates per-agent tunnel (optional, can share dashboard tunnel)
-4. Telegram webhook is set to agent public URL
-5. Health monitor periodically validates tunnel + webhook behavior
+On startup (`./hermit-server`):
 
-If degraded, status is surfaced in the health panel and should trigger remediation logic.
+1. Dashboard starts on localhost:3000
+2. Optional: Dashboard public URL created (cloudflared tunnel or domain)
+3. Telegram polling starts for agents with tokens
+4. Health monitor checks tunnel reachability (if enabled)
+
+Telegram communication works regardless of tunnel status.
 
 ---
 

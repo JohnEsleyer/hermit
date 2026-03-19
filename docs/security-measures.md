@@ -60,11 +60,11 @@ func hashPassword(password string) string {
 
 ### 3. Telegram User Allowlist
 **File: `internal/api/server.go`**
-```go
-func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
-    // Get agent configuration
-    agent, _ := s.db.GetAgent(agentId)
 
+Authorization is checked in `ProcessTelegramUpdate` for each incoming message:
+
+```go
+func (s *Server) ProcessTelegramUpdate(agent *db.Agent, update telegram.Update) {
     // Check authorization
     allowed := false
     if agent.AllowedUsers == "" {
@@ -82,7 +82,8 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
     }
 
     if !allowed {
-        return c.SendStatus(200)  // Silently ignore
+        // Send unauthorized message and return
+        return
     }
     // Process message...
 }

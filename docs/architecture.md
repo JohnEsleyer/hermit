@@ -32,14 +32,15 @@ Supports multiple providers:
 - **Google Gemini**
 
 ### 5. Telegram Bot Integration
-- Webhook-based communication
+- Long polling for message handling (architectural simplicity)
 - Commands: `/start`, `/help`, `/clear`, `/tokens`, `/reset`, `/takeover`, `/give_system_prompt`, `/give_context`
 
 ## Public URL Strategy
 
-HermitShell treats public URLs as a core runtime dependency:
+HermitShell treats public URLs as **optional** runtime dependencies:
 
-- Telegram webhooks require a publicly reachable endpoint
+- Telegram uses long polling (no public URL needed)
+- Dashboard tunnel is optional (for remote access)
 - Agent apps in `/workspace/apps/<app-name>` are exposed through reverse proxy paths like `/apps/<app-name>`
 
 ### Tunnel Mode (Default)
@@ -58,8 +59,7 @@ HermitShell treats public URLs as a core runtime dependency:
 Tunnel health is assessed through:
 
 1. Reachability checks to tunnel URLs
-2. Telegram webhook diagnostics (last error reported by Telegram)
-3. Status displayed in Health panel
+2. Status displayed in Health panel
 
 ## Metrics
 
@@ -127,8 +127,6 @@ SQLite database with tables:
 ### Telegram
 - `POST /api/telegram/send-code` - Send verification code
 - `POST /api/telegram/verify` - Verify bot
-- `POST /api/webhook` - Telegram webhook
-- `POST /api/webhook/:agentId` - Agent-specific webhook
 
 ## Security
 

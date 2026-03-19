@@ -449,13 +449,13 @@ export function DocsTab() {
                 <div className="space-y-6">
                   {[
                     { step: 1, title: 'Telegram Message', desc: 'User sends message via Telegram', icon: Send, color: 'cyan' },
-                    { step: 2, title: 'Long Polling', desc: 'Server polls Telegram for new messages', icon: Globe, color: 'blue' },
-                    { step: 3, title: 'Container Started', desc: 'Docker container starts if not running', icon: Container, color: 'orange' },
-                    { step: 4, title: 'Context Loaded', desc: 'System prompt + history + skills sent to LLM', icon: Brain, color: 'purple' },
-                    { step: 5, title: 'LLM Processing', desc: 'AI generates XML response', icon: Cpu, color: 'pink' },
-                    { step: 6, title: 'XML Parsing', desc: 'System extracts and executes actions', icon: FileCode, color: 'green' },
-                    { step: 7, title: 'Action Execution', desc: 'Commands run, messages sent, files delivered', icon: Zap, color: 'yellow' },
-                    { step: 8, title: 'History Saved', desc: 'Full exchange stored in database', icon: Database, color: 'emerald' },
+                    { step: 2, title: 'Long Polling', desc: 'Server polls Telegram API for updates (30s timeout)', icon: Globe, color: 'blue' },
+                    { step: 3, title: 'Authorization', desc: 'Verify user is in allowed list', icon: Zap, color: 'yellow' },
+                    { step: 4, title: 'Container Started', desc: 'Docker container starts if not running', icon: Container, color: 'orange' },
+                    { step: 5, title: 'Context Loaded', desc: 'System prompt + history + skills sent to LLM', icon: Brain, color: 'purple' },
+                    { step: 6, title: 'LLM Processing', desc: 'AI generates XML response', icon: Cpu, color: 'pink' },
+                    { step: 7, title: 'XML Parsing', desc: 'System extracts and executes actions', icon: FileCode, color: 'green' },
+                    { step: 8, title: 'Response Sent', desc: 'Message sent back to Telegram user', icon: MessageCircle, color: 'cyan' },
                   ].map(item => (
                     <div key={item.step} className="flex gap-4">
                       <div className="flex flex-col items-center">
@@ -476,6 +476,33 @@ export function DocsTab() {
                 </div>
               </div>
             </DocCard>
+
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl p-6">
+              <h3 className="text-lg font-bold text-white mb-3">Why Long Polling?</h3>
+              <p className="text-zinc-400 text-sm mb-4">
+                HermitShell uses long polling instead of webhooks for <strong className="text-white">architectural simplicity</strong>.
+                This allows the system to work on localhost without requiring a public URL.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4">
+                  <h4 className="font-bold text-green-400 mb-2">Benefits</h4>
+                  <ul className="text-xs text-zinc-400 space-y-1">
+                    <li>• Works on localhost</li>
+                    <li>• No webhook verification</li>
+                    <li>• Server restarts don't lose messages</li>
+                    <li>• Simpler code (~15 lines)</li>
+                  </ul>
+                </div>
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                  <h4 className="font-bold text-zinc-300 mb-2">Trade-offs</h4>
+                  <ul className="text-xs text-zinc-500 space-y-1">
+                    <li>• Slight latency (0-30s)</li>
+                    <li>• More server resources</li>
+                    <li>• 30 polling requests/min per agent</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
 
             <DocCard title="Takeover Mode" icon={Terminal} gradient="from-red-500 to-orange-500">
               <p className="text-zinc-400 mb-4">

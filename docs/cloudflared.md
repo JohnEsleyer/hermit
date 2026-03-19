@@ -2,7 +2,7 @@
 
 ## Overview
 
-Hermit uses `cloudflared` (Cloudflare Tunnel) to create public URLs for the dashboard and Telegram webhooks without requiring a public IP or domain.
+HermitShell uses `cloudflared` (Cloudflare Tunnel) to create public URLs for the dashboard and agent web apps. This is **optional** - Telegram communication works via long polling without any tunnel.
 
 ## High-Level Flow
 
