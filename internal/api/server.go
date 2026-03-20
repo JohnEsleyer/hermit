@@ -346,6 +346,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Get("/agents/:id/context", s.HandleGetAgentContextWindow)
 	api.Get("/agents/:id/last-message", s.HandleGetLastMessage)
 	api.Get("/agents/:id/unread", s.HandleGetUnreadCount)
+	api.Post("/agents/:id/mark-seen", s.HandleMarkMessagesSeen)
 
 	api.Get("/skills", s.HandleListSkills)
 	api.Post("/skills", s.HandleCreateSkill)
@@ -421,9 +422,11 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	userText := strings.TrimSpace(req.Message)
 	if userText != "" && strings.HasPrefix(userText, "enc:") {
 		decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
-		if err == nil {
-			userText = decrypted
+		if err != nil {
+			log.Printf("[ERROR] Failed to decrypt message: %v", err)
+			return c.Status(400).JSON(fiber.Map{"error": "Failed to decrypt message"})
 		}
+		userText = decrypted
 	}
 
 	if userText == "" {
@@ -455,10 +458,24 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	// In takeover mode, user is in the driver's seat and system processes XML tags from user input
 	takeoverMode := s.takeoverMode[chatID]
 
+	// Parse user input for XML tags
+	parsedInput := parser.ParseLLMOutput(userText)
+	hasXMLTags := hasSystemExecutionInput(parsedInput)
+
+	// If user sends XML commands and takeover is off, reject them
+	if hasXMLTags && !takeoverMode {
+		s.addHistoryAndBroadcastWithRejection(agent.ID, userID, "user", userText, true)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.")
+		return c.JSON(fiber.Map{
+			"message":  "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.",
+			"role":     "system",
+			"rejected": true,
+		})
+	}
+
 	// In takeover mode: User is in control, process XML tags from user input
 	if takeoverMode {
-		parsedInput := parser.ParseLLMOutput(userText)
-		if hasSystemExecutionInput(parsedInput) {
+		if hasXMLTags {
 			s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
 			processedLog := describeParsedTags(parsedInput)
 			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
@@ -547,6 +564,7 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
 	}
 
+	// Parse the LLM response to extract message content and files
 	parsed := parser.ParseLLMOutput(response)
 	var files []string
 	for _, action := range parsed.Actions {
@@ -555,19 +573,13 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		}
 	}
 
-	finalResponse := response
-	finalParsedMsg := parsed.Message
-	if encrypted, err := crypto.Encrypt(finalResponse, crypto.DeriveKey("hermit123")); err == nil {
-		finalResponse = "enc:" + encrypted
-	}
-	if encrypted, err := crypto.Encrypt(finalParsedMsg, crypto.DeriveKey("hermit123")); err == nil {
-		finalParsedMsg = "enc:" + encrypted
-	}
-
+	// Return the message content (without XML tags) and files
+	// System messages are NOT encrypted
+	// Role indicates the source: "assistant" for LLM, "system" for system messages
 	return c.JSON(fiber.Map{
-		"response": finalResponse,
-		"message":  finalParsedMsg,
-		"files":    files,
+		"message": parsed.Message,
+		"files":   files,
+		"role":    "assistant",
 	})
 }
 
@@ -1850,7 +1862,31 @@ func (s *Server) HandleGetLastMessage(c *fiber.Ctx) error {
 
 // HandleGetUnreadCount returns the unread message count for an agent.
 func (s *Server) HandleGetUnreadCount(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{"unread": 0})
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	count, err := s.db.GetUnseenCount(id)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"unread": count})
+}
+
+// HandleMarkMessagesSeen marks all messages for an agent as seen.
+func (s *Server) HandleMarkMessagesSeen(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	if err := s.db.MarkHistorySeen(id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func (s *Server) HandleListSkills(c *fiber.Ctx) error {
@@ -3668,4 +3704,19 @@ func (s *Server) BroadcastMessage(msg string) {
 
 func (s *Server) addHistoryAndBroadcast(agentID int64, userID, role, content string) {
 	s.addHistoryAndBroadcastWithFiles(agentID, userID, role, content, nil)
+}
+
+func (s *Server) addHistoryAndBroadcastWithRejection(agentID int64, userID, role, content string, isRejected bool) {
+	s.db.AddHistoryWithRejection(agentID, userID, role, content, isRejected)
+
+	payload := map[string]interface{}{
+		"type":     "new_message",
+		"agent_id": agentID,
+		"user_id":  userID,
+		"role":     role,
+		"content":  content,
+	}
+	if jsonMsg, err := json.Marshal(payload); err == nil {
+		s.BroadcastMessage(string(jsonMsg))
+	}
 }
