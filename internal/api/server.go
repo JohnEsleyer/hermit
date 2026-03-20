@@ -444,7 +444,25 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	// Handle commands locally without LLM
 	if strings.HasPrefix(userText, "/") {
-		return s.handleLocalCommand(c, agent, userText)
+		return s.handleLocalCommand(c, agent, userID, userText)
+	}
+
+	parsedInput := parser.ParseLLMOutput(userText)
+	if hasSystemExecutionInput(parsedInput) {
+		s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+		processedLog := describeParsedTags(parsedInput)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
+		s.db.LogAction(agent.ID, "system", "mobile_system_input", processedLog)
+
+		feedback := s.ExecuteXMLPayload(agent.ID, chatID, userText, nil)
+		files := extractExecutionFiles(parsedInput)
+		if parsedInput.Message != "" || len(files) > 0 {
+			s.addHistoryAndBroadcastWithFiles(agent.ID, chatID, "assistant", parsedInput.Message, files)
+		}
+
+		response := formatSystemExecutionResponse(parsedInput, feedback)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
+		return c.JSON(fiber.Map{"message": response, "files": files, "role": "system"})
 	}
 
 	s.db.LogAction(agent.ID, "agent", "ai_processing", fmt.Sprintf("Processing HTTP chat message from user %s", userID))
@@ -1556,11 +1574,12 @@ func (s *Server) HandleGetAgentLogs(c *fiber.Ctx) error {
 }
 
 // handleLocalCommand processes commands without requiring LLM
-func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, command string) error {
+func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, command string) error {
 	parts := strings.Fields(command)
 	cmd := parts[0]
 
 	response := ""
+	processedLog := fmt.Sprintf("Processed slash command: %s", cmd)
 
 	switch cmd {
 	case "/status":
@@ -1628,12 +1647,22 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, command strin
 		s.db.ClearHistory(agent.ID)
 		s.broadcastConversationCleared(agent.ID)
 		response = "✅ Chat history cleared"
+		s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
+		s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
+		return c.JSON(fiber.Map{"message": response, "role": "system"})
 
 	default:
 		response = fmt.Sprintf("Unknown command: %s", cmd)
 	}
 
-	return c.JSON(fiber.Map{"message": response})
+	s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
+	s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
+	s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
+	s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
+
+	return c.JSON(fiber.Map{"message": response, "role": "system"})
 }
 
 func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
@@ -3193,12 +3222,14 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 }
 
 func (s *Server) handleTakeoverInput(agentId int64, chatID, xmlInput string, bot *telegram.Bot) {
-	// Execute the actions
-	feedback := s.ExecuteXMLPayload(agentId, chatID, xmlInput, bot)
+	parsedInput := parser.ParseLLMOutput(xmlInput)
+	processedLog := describeParsedTags(parsedInput)
+	s.addHistoryAndBroadcast(agentId, "system", "system", processedLog)
+	s.db.LogAction(agentId, "system", "takeover_input", processedLog)
 
-	// Log feedback and add <end>
-	feedbackJSON, _ := json.Marshal(feedback)
-	s.addHistoryAndBroadcast(agentId, "system", "system", string(feedbackJSON)+"\n<end>")
+	feedback := s.ExecuteXMLPayload(agentId, chatID, xmlInput, bot)
+	response := formatSystemExecutionResponse(parsedInput, feedback)
+	s.addHistoryAndBroadcast(agentId, "system", "system", response)
 }
 
 // HandleExportBackup exports all app data to a .zip file.
