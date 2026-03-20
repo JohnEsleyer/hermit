@@ -421,9 +421,11 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	userText := strings.TrimSpace(req.Message)
 	if userText != "" && strings.HasPrefix(userText, "enc:") {
 		decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
-		if err == nil {
-			userText = decrypted
+		if err != nil {
+			log.Printf("[ERROR] Failed to decrypt message: %v", err)
+			return c.Status(400).JSON(fiber.Map{"error": "Failed to decrypt message"})
 		}
+		userText = decrypted
 	}
 
 	if userText == "" {
@@ -571,9 +573,11 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	// Return the message content (without XML tags) and files
 	// System messages are NOT encrypted
+	// Role indicates the source: "assistant" for LLM, "system" for system messages
 	return c.JSON(fiber.Map{
 		"message": parsed.Message,
 		"files":   files,
+		"role":    "assistant",
 	})
 }
 

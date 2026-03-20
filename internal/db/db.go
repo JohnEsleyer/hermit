@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"strconv"
 	"time"
 
@@ -561,7 +562,10 @@ func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 		e.IsSeen = isSeen == 1
 		if d.cryptoKey != nil && len(e.Content) > 4 && e.Content[:4] == "enc:" {
 			decrypted, err := crypto.Decrypt(e.Content[4:], d.cryptoKey)
-			if err == nil {
+			if err != nil {
+				log.Printf("[ERROR] Failed to decrypt history entry %d: %v", e.ID, err)
+				e.Content = "[Decryption failed]"
+			} else {
 				e.Content = decrypted
 			}
 		}
