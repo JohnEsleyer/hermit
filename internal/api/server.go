@@ -343,6 +343,9 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Post("/agents/:id/chat", s.HandleAgentChat)
 	api.Get("/agents/:id/logs", s.HandleGetAgentLogs)
 	api.Get("/agents/:id/stats", s.HandleGetAgentStats)
+	api.Get("/agents/:id/context", s.HandleGetAgentContextWindow)
+	api.Get("/agents/:id/last-message", s.HandleGetLastMessage)
+	api.Get("/agents/:id/unread", s.HandleGetUnreadCount)
 
 	api.Get("/skills", s.HandleListSkills)
 	api.Post("/skills", s.HandleCreateSkill)
@@ -1760,6 +1763,63 @@ func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(stats)
+}
+
+// HandleGetAgentContextWindow returns the full context window for an agent.
+func (s *Server) HandleGetAgentContextWindow(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	agent, err := s.db.GetAgent(id)
+	if err != nil {
+		return c.Status(404).JSON(fiber.Map{"error": "agent not found"})
+	}
+
+	history, _ := s.db.GetHistory(id, 500)
+
+	contextPath := fmt.Sprintf("data/agents/%d/skills/context.md", id)
+	contextData, _ := os.ReadFile(contextPath)
+
+	var historyList []map[string]string
+	for _, h := range history {
+		historyList = append(historyList, map[string]string{
+			"role":    h.Role,
+			"content": h.Content,
+		})
+	}
+
+	globalContextPath := "./context.md"
+	globalContextData, _ := os.ReadFile(globalContextPath)
+
+	return c.JSON(fiber.Map{
+		"systemPrompt":     string(contextData),
+		"globalContext":    string(globalContextData),
+		"agentPersonality": agent.Personality,
+		"history":          historyList,
+	})
+}
+
+// HandleGetLastMessage returns the last message from an agent.
+func (s *Server) HandleGetLastMessage(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	history, err := s.db.GetHistory(id, 1)
+	if err != nil || len(history) == 0 {
+		return c.JSON(fiber.Map{"content": ""})
+	}
+
+	lastMessage := history[len(history)-1]
+	return c.JSON(fiber.Map{"content": lastMessage.Content})
+}
+
+// HandleGetUnreadCount returns the unread message count for an agent.
+func (s *Server) HandleGetUnreadCount(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{"unread": 0})
 }
 
 func (s *Server) HandleListSkills(c *fiber.Ctx) error {
