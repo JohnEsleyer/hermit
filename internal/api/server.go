@@ -346,6 +346,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Get("/agents/:id/context", s.HandleGetAgentContextWindow)
 	api.Get("/agents/:id/last-message", s.HandleGetLastMessage)
 	api.Get("/agents/:id/unread", s.HandleGetUnreadCount)
+	api.Post("/agents/:id/mark-seen", s.HandleMarkMessagesSeen)
 
 	api.Get("/skills", s.HandleListSkills)
 	api.Post("/skills", s.HandleCreateSkill)
@@ -463,11 +464,12 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	// If user sends XML commands and takeover is off, reject them
 	if hasXMLTags && !takeoverMode {
-		s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+		s.addHistoryAndBroadcastWithRejection(agent.ID, userID, "user", userText, true)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.")
 		return c.JSON(fiber.Map{
-			"message": "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.",
-			"role":    "system",
+			"message":  "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.",
+			"role":     "system",
+			"rejected": true,
 		})
 	}
 
@@ -1860,7 +1862,31 @@ func (s *Server) HandleGetLastMessage(c *fiber.Ctx) error {
 
 // HandleGetUnreadCount returns the unread message count for an agent.
 func (s *Server) HandleGetUnreadCount(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{"unread": 0})
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	count, err := s.db.GetUnseenCount(id)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"unread": count})
+}
+
+// HandleMarkMessagesSeen marks all messages for an agent as seen.
+func (s *Server) HandleMarkMessagesSeen(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	if err := s.db.MarkHistorySeen(id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func (s *Server) HandleListSkills(c *fiber.Ctx) error {
@@ -3678,4 +3704,19 @@ func (s *Server) BroadcastMessage(msg string) {
 
 func (s *Server) addHistoryAndBroadcast(agentID int64, userID, role, content string) {
 	s.addHistoryAndBroadcastWithFiles(agentID, userID, role, content, nil)
+}
+
+func (s *Server) addHistoryAndBroadcastWithRejection(agentID int64, userID, role, content string, isRejected bool) {
+	s.db.AddHistoryWithRejection(agentID, userID, role, content, isRejected)
+
+	payload := map[string]interface{}{
+		"type":     "new_message",
+		"agent_id": agentID,
+		"user_id":  userID,
+		"role":     role,
+		"content":  content,
+	}
+	if jsonMsg, err := json.Marshal(payload); err == nil {
+		s.BroadcastMessage(string(jsonMsg))
+	}
 }
