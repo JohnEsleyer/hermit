@@ -215,6 +215,9 @@ type Server struct {
 
 	wsClients map[*websocket.Conn]bool
 	wsMutex   sync.Mutex
+
+	schedulerRunning bool
+	schedulerMu      sync.Mutex
 }
 
 func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client, tunnels *cloudflare.TunnelManager) *Server {
@@ -257,6 +260,10 @@ func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmC
 
 	// Start background metrics broadcast
 	go s.StartMetricsBroadcast()
+
+	// Start calendar scheduler (sends reminders to agents for processing)
+	// Run in goroutine so it doesn't block server startup
+	go s.StartCalendarScheduler()
 
 	return s
 }
@@ -567,34 +574,54 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	s.db.LogAction(agent.ID, "network", "llm_request", fmt.Sprintf("Provider: %s, Model: %s, Messages: %d", agent.Provider, agent.Model, len(messages)))
 
-	response, err := client.Chat(agent.Model, messages)
+	// Retry helper for missing <message> tag
+	maxRetries := 1
+	var response string
+	var parsed parser.ParsedResponse
 
-	s.db.IncrementLLMAPICalls(agent.ID)
-	contextWindow := getModelContextWindow(agent.Model)
-	s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		response, err = client.Chat(agent.Model, messages)
 
-	if err != nil {
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: "+err.Error())
-		return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
+		s.db.IncrementLLMAPICalls(agent.ID)
+		contextWindow := getModelContextWindow(agent.Model)
+		s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
+
+		if err != nil {
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: "+err.Error())
+			return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
+		}
+
+		// Parse the LLM response to extract message content and files
+		parsed = parser.ParseLLMOutput(response)
+
+		s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response (attempt %d): %.200s...", attempt+1, response))
+		s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+
+		// Success if <message> tag found
+		if parsed.Message != "" {
+			break
+		}
+
+		// If no <message> tag and we have retries left, add explicit reminder
+		if attempt < maxRetries {
+			log.Printf("[RETRY] No <message> tag found, retrying with reminder (attempt %d/%d)", attempt+1, maxRetries+1)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", fmt.Sprintf("Retry %d/%d: Your last response had no <message> tags. Remember: ALL visible text must be wrapped in <message> tags, or it will be ignored.", attempt+1, maxRetries+1))
+			messages = append(messages, llm.Message{Role: "system", Content: "Reminder: Your response must contain <message>...</message> tags around ALL visible text. Without these tags, your response will be completely ignored by the user."})
+		}
 	}
 
-	// Parse the LLM response to extract message content and files
-	parsed := parser.ParseLLMOutput(response)
+	// Final check: if still no <message> tag after retries, reject
+	if parsed.Message == "" {
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: Response missing required <message> tag after retries")
+		return c.Status(400).JSON(fiber.Map{"error": "Response missing required <message> tag. All visible text must be wrapped in <message> tags."})
+	}
+
+	// Extract files from parsed response
 	var files []string
 	for _, action := range parsed.Actions {
 		if action.Type == "GIVE" {
 			files = append(files, action.Value)
 		}
-	}
-
-	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
-	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
-
-	// Reject if no <message> tag was found
-	// Plain text outside tags is ignored - <message> tag is required
-	if parsed.Message == "" {
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: Response missing required <message> tag")
-		return c.Status(400).JSON(fiber.Map{"error": "Response missing required <message> tag. All visible text must be wrapped in <message> tags."})
 	}
 
 	// Only broadcast the parsed message content, not raw response
@@ -946,6 +973,181 @@ func (s *Server) StartMetricsBroadcast() {
 		}
 		s.wsMutex.Unlock()
 	}
+}
+
+// StartCalendarScheduler monitors calendar events and triggers agents when they fire.
+// Instead of sending reminders directly, it injects the prompt as a user message
+// to the agent's conversation, letting the agent process and respond naturally.
+func (s *Server) StartCalendarScheduler() {
+	s.schedulerMu.Lock()
+	if s.schedulerRunning {
+		s.schedulerMu.Unlock()
+		return
+	}
+	s.schedulerRunning = true
+	s.schedulerMu.Unlock()
+
+	log.Println("Calendar scheduler started (agent-aware mode)")
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.processScheduledEvents()
+	}
+}
+
+func (s *Server) processScheduledEvents() {
+	// Use mutex to prevent duplicate processing of the same event
+	s.schedulerMu.Lock()
+	defer s.schedulerMu.Unlock()
+
+	events, err := s.db.GetPendingCalendarEvents()
+	if err != nil {
+		return
+	}
+
+	if len(events) > 0 {
+		log.Printf("[SCHEDULER] Found %d pending events", len(events))
+	}
+
+	currentTime := s.db.GetSystemTime()
+
+	for _, event := range events {
+		// Parse event datetime (stored in local time)
+		eventTime, err := time.Parse("2006-01-02 15:04", event.Date+" "+event.Time)
+		if err != nil {
+			log.Printf("[SCHEDULER] Failed to parse event time: %v", err)
+			continue
+		}
+
+		// Check if event time has passed
+		if currentTime.After(eventTime) || currentTime.Equal(eventTime) {
+			log.Printf("[SCHEDULER] Triggering event %d: %s", event.ID, event.Prompt)
+
+			// Get agent
+			agent, err := s.db.GetAgent(event.AgentID)
+			if err != nil {
+				log.Printf("[SCHEDULER] Failed to get agent: %v", err)
+				continue
+			}
+
+			// Send reminder to agent as a new user message
+			// Use special source tag so agent knows not to re-schedule
+			// Format: [SCHEDULED_REMINDER] to distinguish from regular user messages
+			reminderMessage := fmt.Sprintf("[SCHEDULED_REMINDER] %s", event.Prompt)
+
+			// Add as user message to history
+			chatID := "scheduler"
+			if agent.TelegramToken != "" {
+				allowedUsers := strings.Split(agent.AllowedUsers, ",")
+				if len(allowedUsers) > 0 && allowedUsers[0] != "" {
+					chatID = strings.TrimSpace(allowedUsers[0])
+				}
+			}
+
+			s.db.AddHistory(agent.ID, chatID, "user", reminderMessage)
+			s.addHistoryAndBroadcast(agent.ID, chatID, "user", reminderMessage)
+
+			// Mark as executed BEFORE triggering agent to prevent race conditions
+			s.db.MarkCalendarEventExecuted(event.ID)
+
+			// Trigger agent to process this message
+			go s.triggerAgentForReminder(agent.ID, chatID, reminderMessage)
+		}
+	}
+}
+
+// triggerAgentForReminder sends the reminder to the agent for processing
+func (s *Server) triggerAgentForReminder(agentID int64, chatID, message string) {
+	log.Printf("[SCHEDULER] Triggering agent %d for reminder processing", agentID)
+
+	// Get LLM client for agent
+	agent, err := s.db.GetAgent(agentID)
+	if err != nil {
+		log.Printf("[SCHEDULER] Failed to get agent: %v", err)
+		return
+	}
+
+	client := s.getLLMClientForAgent(agent)
+	if client == nil {
+		log.Printf("[SCHEDULER] No LLM client configured for agent %d", agentID)
+		return
+	}
+
+	// Build messages with system prompt and reminder
+	messages := s.buildAgentMessages(agent, message)
+
+	// Get LLM response
+	response, err := client.Chat(agent.Model, messages)
+	if err != nil {
+		log.Printf("[SCHEDULER] LLM error: %v", err)
+		return
+	}
+
+	// Parse and process response
+	parsed := parser.ParseLLMOutput(response)
+	if parsed.Message != "" {
+		// Broadcast agent's response
+		s.addHistoryAndBroadcast(agent.ID, chatID, "assistant", parsed.Message)
+
+		// Send to Telegram if configured
+		if agent.TelegramToken != "" {
+			bot := telegram.NewBot(agent.TelegramToken)
+			bot.SendMessage(chatID, parsed.Message)
+		}
+
+		// Execute any XML actions (terminal, give, etc.)
+		feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
+		if len(feedback) > 0 {
+			feedbackJSON, _ := json.Marshal(feedback)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
+		}
+	} else {
+		log.Printf("[SCHEDULER] Agent response missing <message> tag, sending fallback")
+		fallback := "🔔 Reminder: " + message
+		s.addHistoryAndBroadcast(agent.ID, chatID, "assistant", fallback)
+		if agent.TelegramToken != "" {
+			bot := telegram.NewBot(agent.TelegramToken)
+			bot.SendMessage(chatID, fallback)
+		}
+	}
+}
+
+// buildAgentMessages constructs the message list for agent processing
+func (s *Server) buildAgentMessages(agent *db.Agent, userMessage string) []llm.Message {
+	var messages []llm.Message
+
+	// Load system prompt from context.md
+	systemPrompt := agent.Personality
+	if content, err := os.ReadFile("./context.md"); err == nil {
+		contextStr := strings.TrimSpace(string(content))
+		if contextStr != "" {
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+			systemPrompt = contextStr
+		}
+	}
+
+	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
+
+	// Add current time info
+	currentTime := s.db.GetSystemTime()
+	userMessageWithTime := fmt.Sprintf("[System time: %s]\n\n%s", currentTime.Format("2006-01-02 15:04:05"), userMessage)
+	messages = append(messages, llm.Message{Role: "user", Content: userMessageWithTime})
+
+	// Add recent history for context
+	history, _ := s.db.GetHistory(agent.ID, 10)
+	for i := len(history) - 1; i >= 0; i-- {
+		h := history[i]
+		role := h.Role
+		if role == "system" {
+			role = "user"
+		}
+		messages = append(messages, llm.Message{Role: role, Content: h.Content})
+	}
+
+	return messages
 }
 
 type LogWithAgent struct {
@@ -3367,21 +3569,37 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 			}
 
 		default: // create
-			// Parse DateTime into date and time components
-			dateTime := cal.DateTime
+			// Support both absolute datetime and relative time (schedule) fields
 			var dateStr, timeStr string
+			var targetTime time.Time
 
-			if dateTime != "" {
-				if len(dateTime) >= 10 {
-					dateStr = dateTime[:10]
-				}
-				if len(dateTime) >= 19 {
-					timeStr = dateTime[11:16]
-				} else if len(dateTime) >= 16 {
-					timeStr = dateTime[11:16]
+			// Handle relative time via <schedule minutes="N" hours="N" days="N">
+			if cal.ScheduleMinutes > 0 || cal.ScheduleHours > 0 || cal.ScheduleDays > 0 {
+				// Calculate future time from current system time
+				targetTime = s.db.GetSystemTime()
+				targetTime = targetTime.Add(time.Duration(cal.ScheduleMinutes) * time.Minute)
+				targetTime = targetTime.Add(time.Duration(cal.ScheduleHours) * time.Hour)
+				targetTime = targetTime.Add(time.Duration(cal.ScheduleDays) * 24 * time.Hour)
+				dateStr = targetTime.Format("2006-01-02")
+				timeStr = targetTime.Format("15:04")
+				log.Printf("[CALENDAR] Relative schedule: minutes=%d, hours=%d, days=%d -> scheduled for %s %s",
+					cal.ScheduleMinutes, cal.ScheduleHours, cal.ScheduleDays, dateStr, timeStr)
+			} else {
+				// Handle absolute datetime via <datetime>
+				dateTime := cal.DateTime
+				if dateTime != "" {
+					if len(dateTime) >= 10 {
+						dateStr = dateTime[:10]
+					}
+					if len(dateTime) >= 19 {
+						timeStr = dateTime[11:16]
+					} else if len(dateTime) >= 16 {
+						timeStr = dateTime[11:16]
+					}
 				}
 			}
 
+			// Create the calendar event if we have both date and time
 			if dateStr != "" && timeStr != "" {
 				_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
 					AgentID:  agentID,
