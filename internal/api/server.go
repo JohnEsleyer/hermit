@@ -2234,15 +2234,16 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 		}
 	}
 
+	// Return actual key values so client can populate the settings form
 	return c.JSON(fiber.Map{
 		"tunnelEnabled": tunnelEnabled == "true",
 		"tunnelURL":     tunnelURL,
 		"tunnelHealthy": isHealthy,
 		"status":        status,
-		"openrouterKey": openrouterKey != "",
-		"openaiKey":     openaiKey != "",
-		"anthropicKey":  anthropicKey != "",
-		"geminiKey":     geminiKey != "",
+		"openrouterKey": openrouterKey,
+		"openaiKey":     openaiKey,
+		"anthropicKey":  anthropicKey,
+		"geminiKey":     geminiKey,
 		"timezone":      timezone,
 		"timeOffset":    timeOffset,
 		"hasLLMKey":     openrouterKey != "" || openaiKey != "" || anthropicKey != "" || geminiKey != "",
