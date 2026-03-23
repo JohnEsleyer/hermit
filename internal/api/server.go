@@ -624,9 +624,13 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		}
 	}
 
-	// Only broadcast the parsed message content, not raw response
-	// This ensures <thought> tags are kept internal and only <message> content goes to users
-	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", parsed.Message)
+	// Store raw response in history (with tags visible for debugging/copy)
+	// This allows users to see exactly what the agent responded with when they copy history
+	s.addHistoryOnly(agent.ID, "assistant", "assistant", response)
+
+	// Broadcast ONLY the parsed <message> content to HermitChat UI (no tags)
+	// This ensures clean display without XML tags for end users
+	s.broadcastAgentMessage(agent.ID, chatID, parsed.Message)
 
 	// Process XML tags from LLM response (terminal, give, calendar, etc.)
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
@@ -1003,26 +1007,49 @@ func (s *Server) processScheduledEvents() {
 
 	events, err := s.db.GetPendingCalendarEvents()
 	if err != nil {
+		log.Printf("[SCHEDULER] Error getting pending events: %v", err)
 		return
 	}
 
 	if len(events) > 0 {
 		log.Printf("[SCHEDULER] Found %d pending events", len(events))
+		for _, e := range events {
+			log.Printf("[SCHEDULER] Event: id=%d, agent=%d, date=%s %s, type=%s, prompt=%s",
+				e.ID, e.AgentID, e.Date, e.Time, e.EventType, e.Prompt)
+		}
 	}
 
+	// Use system time with timezone offset applied (same as what settings show)
 	currentTime := s.db.GetSystemTime()
+	log.Printf("[SCHEDULER] Current time (system): %s", currentTime.Format("2006-01-02 15:04:05"))
 
 	for _, event := range events {
-		// Parse event datetime (stored in local time)
-		eventTime, err := time.Parse("2006-01-02 15:04", event.Date+" "+event.Time)
+		// Double-check not already executed (race condition protection)
+		if event.Executed {
+			continue
+		}
+
+		// Parse event datetime (stored in system time)
+		eventTime, err := time.ParseInLocation("2006-01-02 15:04", event.Date+" "+event.Time, time.Local)
 		if err != nil {
 			log.Printf("[SCHEDULER] Failed to parse event time: %v", err)
 			continue
 		}
 
+		log.Printf("[SCHEDULER] Checking event %d: eventTime=%s, currentTime=%s, isDue=%v",
+			event.ID, eventTime.Format("2006-01-02 15:04:05"), currentTime.Format("2006-01-02 15:04:05"),
+			currentTime.After(eventTime) || currentTime.Equal(eventTime))
+
 		// Check if event time has passed
 		if currentTime.After(eventTime) || currentTime.Equal(eventTime) {
-			log.Printf("[SCHEDULER] Triggering event %d: %s", event.ID, event.Prompt)
+			log.Printf("[SCHEDULER] Triggering event %d (type=%s): %s", event.ID, event.EventType, event.Prompt)
+
+			// Mark as executed IMMEDIATELY to prevent duplicate triggers from concurrent ticks
+			// Using conditional update ensures only one process can mark it
+			if err := s.db.MarkCalendarEventExecuted(event.ID); err != nil {
+				log.Printf("[SCHEDULER] Event %d already executed by another process", event.ID)
+				continue
+			}
 
 			// Get agent
 			agent, err := s.db.GetAgent(event.AgentID)
@@ -1030,13 +1057,9 @@ func (s *Server) processScheduledEvents() {
 				log.Printf("[SCHEDULER] Failed to get agent: %v", err)
 				continue
 			}
+			log.Printf("[SCHEDULER] Got agent: %s (id=%d, telegram=%s)", agent.Name, agent.ID, agent.TelegramToken)
 
-			// Send reminder to agent as a new user message
-			// Use special source tag so agent knows not to re-schedule
-			// Format: [SCHEDULED_REMINDER] to distinguish from regular user messages
-			reminderMessage := fmt.Sprintf("[SCHEDULED_REMINDER] %s", event.Prompt)
-
-			// Add as user message to history
+			// Determine chat ID for delivery
 			chatID := "scheduler"
 			if agent.TelegramToken != "" {
 				allowedUsers := strings.Split(agent.AllowedUsers, ",")
@@ -1044,16 +1067,43 @@ func (s *Server) processScheduledEvents() {
 					chatID = strings.TrimSpace(allowedUsers[0])
 				}
 			}
+			log.Printf("[SCHEDULER] Using chatID: %s", chatID)
 
-			s.db.AddHistory(agent.ID, chatID, "user", reminderMessage)
-			s.addHistoryAndBroadcast(agent.ID, chatID, "user", reminderMessage)
-
-			// Mark as executed BEFORE triggering agent to prevent race conditions
-			s.db.MarkCalendarEventExecuted(event.ID)
-
-			// Trigger agent to process this message
-			go s.triggerAgentForReminder(agent.ID, chatID, reminderMessage)
+			// Handle based on event type
+			if event.EventType == "deliver" {
+				// DELIVER mode: Send pre-written content directly as agent message (no LLM call)
+				// This is for pre-scheduled content like Japanese lessons, reminders, etc.
+				s.deliverScheduledContent(agent, chatID, event.Prompt)
+			} else {
+				// ACTION mode: Trigger LLM to perform the scheduled task
+				// This is for tasks like "write code in 1 hour"
+				reminderMessage := fmt.Sprintf("[SCHEDULED_REMINDER] %s", event.Prompt)
+				// Add to DB history only (no broadcast to UI) - internal scheduler message
+				s.addHistoryOnly(agent.ID, "scheduler", "system", reminderMessage)
+				// Trigger agent to process this message
+				go s.triggerAgentForReminder(agent.ID, chatID, reminderMessage)
+			}
 		}
+	}
+}
+
+// deliverScheduledContent sends pre-written content directly as an agent message
+// Used for "deliver" type events where the content was pre-written by the agent
+func (s *Server) deliverScheduledContent(agent *db.Agent, chatID, content string) {
+	log.Printf("[SCHEDULER] DELIVER: Broadcasting to agent %d, chatID=%s, content=%s", agent.ID, chatID, content)
+
+	// Store raw content in history for debugging
+	s.addHistoryOnly(agent.ID, chatID, "assistant", content)
+
+	// Broadcast ONLY the clean message content to HermitChat UI (no tags)
+	s.broadcastAgentMessage(agent.ID, chatID, content)
+
+	log.Printf("[SCHEDULER] DELIVER: Broadcast complete, WebSocket clients=%d", len(s.wsClients))
+
+	// Send to Telegram if configured
+	if agent.TelegramToken != "" {
+		bot := telegram.NewBot(agent.TelegramToken)
+		bot.SendMessage(chatID, content)
 	}
 }
 
@@ -1075,7 +1125,9 @@ func (s *Server) triggerAgentForReminder(agentID int64, chatID, message string) 
 	}
 
 	// Build messages with system prompt and reminder
-	messages := s.buildAgentMessages(agent, message)
+	// Also inject explicit instruction to NOT re-schedule
+	reminderDirective := "\n\n⚠️ CRITICAL: This is a SCHEDULED REMINDER that was already scheduled by you. ABSOLUTELY DO NOT create any <calendar> or <schedule> tags in your response. Doing so will cause duplicate/flooded reminders. Simply respond naturally with a <message> tag."
+	messages := s.buildAgentMessages(agent, message+reminderDirective)
 
 	// Get LLM response
 	response, err := client.Chat(agent.Model, messages)
@@ -1086,9 +1138,13 @@ func (s *Server) triggerAgentForReminder(agentID int64, chatID, message string) 
 
 	// Parse and process response
 	parsed := parser.ParseLLMOutput(response)
+
+	// Store raw response in history for debugging
+	s.addHistoryOnly(agent.ID, chatID, "assistant", response)
+
 	if parsed.Message != "" {
-		// Broadcast agent's response
-		s.addHistoryAndBroadcast(agent.ID, chatID, "assistant", parsed.Message)
+		// Broadcast ONLY the parsed message content to HermitChat UI (no tags)
+		s.broadcastAgentMessage(agent.ID, chatID, parsed.Message)
 
 		// Send to Telegram if configured
 		if agent.TelegramToken != "" {
@@ -1100,10 +1156,10 @@ func (s *Server) triggerAgentForReminder(agentID int64, chatID, message string) 
 		feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
 		if len(feedback) > 0 {
 			feedbackJSON, _ := json.Marshal(feedback)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
+			s.addHistoryOnly(agent.ID, "system", "system", string(feedbackJSON))
 		}
 	} else {
-		log.Printf("[SCHEDULER] Agent response missing <message> tag, sending fallback")
+		log.Printf("[SCHEDULED_REMINDER] Agent response missing <message> tag, sending fallback")
 		fallback := "🔔 Reminder: " + message
 		s.addHistoryAndBroadcast(agent.ID, chatID, "assistant", fallback)
 		if agent.TelegramToken != "" {
@@ -1136,10 +1192,14 @@ func (s *Server) buildAgentMessages(agent *db.Agent, userMessage string) []llm.M
 	userMessageWithTime := fmt.Sprintf("[System time: %s]\n\n%s", currentTime.Format("2006-01-02 15:04:05"), userMessage)
 	messages = append(messages, llm.Message{Role: "user", Content: userMessageWithTime})
 
-	// Add recent history for context
+	// Add recent history for context (skip scheduler-triggered messages)
 	history, _ := s.db.GetHistory(agent.ID, 10)
 	for i := len(history) - 1; i >= 0; i-- {
 		h := history[i]
+		// Skip scheduler messages to prevent context pollution
+		if h.UserID == "scheduler" {
+			continue
+		}
 		role := h.Role
 		if role == "system" {
 			role = "user"
@@ -3553,11 +3613,12 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 					// Delete old and create new (simpler than update)
 					s.db.DeleteCalendarEvent(eventID)
 					_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
-						AgentID:  agentID,
-						Date:     newDate,
-						Time:     newTime,
-						Prompt:   newPrompt,
-						Executed: false,
+						AgentID:   agentID,
+						Date:      newDate,
+						Time:      newTime,
+						Prompt:    newPrompt,
+						EventType: cal.EventType,
+						Executed:  false,
 					})
 					if err != nil {
 						feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_UPDATE", "status": "ERROR", "error": err.Error()})
@@ -3575,15 +3636,14 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 			// Handle relative time via <schedule minutes="N" hours="N" days="N">
 			if cal.ScheduleMinutes > 0 || cal.ScheduleHours > 0 || cal.ScheduleDays > 0 {
-				// Calculate future time from current system time
+				// Use system time with timezone offset (same as settings display)
 				targetTime = s.db.GetSystemTime()
 				targetTime = targetTime.Add(time.Duration(cal.ScheduleMinutes) * time.Minute)
 				targetTime = targetTime.Add(time.Duration(cal.ScheduleHours) * time.Hour)
 				targetTime = targetTime.Add(time.Duration(cal.ScheduleDays) * 24 * time.Hour)
 				dateStr = targetTime.Format("2006-01-02")
 				timeStr = targetTime.Format("15:04")
-				log.Printf("[CALENDAR] Relative schedule: minutes=%d, hours=%d, days=%d -> scheduled for %s %s",
-					cal.ScheduleMinutes, cal.ScheduleHours, cal.ScheduleDays, dateStr, timeStr)
+				log.Printf("[CALENDAR] Relative schedule (system time): scheduled for %s %s", dateStr, timeStr)
 			} else {
 				// Handle absolute datetime via <datetime>
 				dateTime := cal.DateTime
@@ -3601,19 +3661,24 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 			// Create the calendar event if we have both date and time
 			if dateStr != "" && timeStr != "" {
+				eventType := cal.EventType
+				if eventType == "" {
+					eventType = "action"
+				}
 				_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
-					AgentID:  agentID,
-					Date:     dateStr,
-					Time:     timeStr,
-					Prompt:   cal.Prompt,
-					Executed: false,
+					AgentID:   agentID,
+					Date:      dateStr,
+					Time:      timeStr,
+					Prompt:    cal.Prompt,
+					EventType: eventType,
+					Executed:  false,
 				})
 				if err != nil {
 					s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Failed: %v", err))
 					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "ERROR", "error": err.Error()})
 				} else {
-					s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Scheduled: %s %s - %s\n<end>", dateStr, timeStr, cal.Prompt))
-					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "SUCCESS"})
+					s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Scheduled: %s %s [%s] - %s\n<end>", dateStr, timeStr, eventType, cal.Prompt))
+					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "SUCCESS", "event_type": eventType})
 				}
 			} else if cal.Prompt != "" {
 				s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Failed: Invalid date/time\n<end>"))
@@ -3981,6 +4046,10 @@ func (s *Server) BroadcastMessage(msg string) {
 
 func (s *Server) addHistoryAndBroadcast(agentID int64, userID, role, content string) {
 	s.addHistoryAndBroadcastWithFiles(agentID, userID, role, content, nil)
+}
+
+func (s *Server) addHistoryOnly(agentID int64, userID, role, content string) {
+	s.db.AddHistory(agentID, userID, role, content)
 }
 
 func (s *Server) addHistoryAndBroadcastWithRejection(agentID int64, userID, role, content string, isRejected bool) {

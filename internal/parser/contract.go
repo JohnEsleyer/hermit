@@ -29,10 +29,11 @@ type ParsedAction struct {
 }
 
 type ParsedCalendar struct {
-	DateTime string `json:"datetime,omitempty"`
-	Prompt   string `json:"prompt,omitempty"`
-	ID       string `json:"id,omitempty"`
-	Action   string `json:"action,omitempty"` // "create", "list", "delete", "update"
+	DateTime  string `json:"datetime,omitempty"`
+	Prompt    string `json:"prompt,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Action    string `json:"action,omitempty"`    // "create", "list", "delete", "update"
+	EventType string `json:"eventType,omitempty"` // "action" (default) or "deliver"
 	// Relative time support via <schedule minutes="N" hours="N" days="N">
 	ScheduleMinutes int `json:"scheduleMinutes,omitempty"`
 	ScheduleHours   int `json:"scheduleHours,omitempty"`
@@ -71,6 +72,11 @@ var (
 	calendarListRegex   = regexp.MustCompile(`(?is)<calendar\s+action=["']?list["']?\s*/>`)
 	calendarDeleteRegex = regexp.MustCompile(`(?is)<calendar\s+action=["']?delete["']?\s+id=["']?([^"'>]+)["']?\s*/>`)
 	calendarUpdateRegex = regexp.MustCompile(`(?is)<calendar\s+action=["']?update["']?\s+id=["']?([^"'>]+)["']?>(.*?)</calendar>`)
+	// Calendar type attribute for CRON-like scheduling
+	// type="action" (default) = call LLM to process when triggered
+	// type="deliver" = send content directly as agent message (no LLM call)
+	calendarTypeRegex   = regexp.MustCompile(`(?is)<calendar\s+type=["']?([^"'>]+)["']?\s*>`)
+	calendarCreateRegex = regexp.MustCompile(`(?is)<calendar\s+type=["']?([^"'>]+)["']?\s*>(.*?)</calendar>`)
 	// New tags: <give>, <app>
 	giveRegex    = regexp.MustCompile(`(?is)<give>(.*?)</give>`)
 	appRegex     = regexp.MustCompile(`(?is)<app\s+name=["']?([^"'>]+)["']?>(.*?)</app>`)
@@ -246,8 +252,54 @@ func ParseLLMOutput(text string) ParsedResponse {
 		}
 
 		if prompt != "" || datetime != "" {
-			resp.Calendars = append(resp.Calendars, ParsedCalendar{DateTime: datetime, Prompt: prompt, Action: "create"})
-			log.Printf("[PARSER DEBUG] Added calendar event")
+			resp.Calendars = append(resp.Calendars, ParsedCalendar{DateTime: datetime, Prompt: prompt, Action: "create", EventType: "action"})
+			log.Printf("[PARSER DEBUG] Added calendar event (type=action)")
+		}
+	}
+
+	// Handle <calendar type="deliver"> or <calendar type="action"> with explicit type
+	typeMatches := calendarCreateRegex.FindAllStringSubmatch(text, -1)
+	for _, m := range typeMatches {
+		if len(m) < 3 {
+			continue
+		}
+		eventType := strings.ToLower(strings.TrimSpace(m[1]))
+		calendarContent := m[2]
+
+		// Skip if this was already processed by the basic calendarRegex
+		// Only process if type is explicitly "deliver"
+		if eventType != "deliver" && eventType != "action" {
+			continue
+		}
+
+		log.Printf("[PARSER DEBUG] calendar with type=%s, content: %s", eventType, calendarContent)
+
+		// Extract prompt
+		promptRegex := regexp.MustCompile(`(?is)<prompt>(.*?)</prompt>`)
+		prompt := ""
+		if pm := promptRegex.FindStringSubmatch(calendarContent); len(pm) > 1 {
+			prompt = strings.TrimSpace(pm[1])
+		}
+
+		// Extract datetime
+		datetime := ""
+		if dt := calendarDateTimeRegex.FindStringSubmatch(calendarContent); len(dt) > 1 {
+			datetime = strings.TrimSpace(dt[1])
+		} else {
+			dateVal := ""
+			timeVal := ""
+			if d := calendarDateRegex.FindStringSubmatch(calendarContent); len(d) > 1 {
+				dateVal = strings.TrimSpace(d[1])
+			}
+			if t := calendarTimeRegex.FindStringSubmatch(calendarContent); len(t) > 1 {
+				timeVal = strings.TrimSpace(t[1])
+			}
+			datetime = strings.TrimSpace(strings.TrimSpace(dateVal) + " " + strings.TrimSpace(timeVal))
+		}
+
+		if prompt != "" || datetime != "" {
+			resp.Calendars = append(resp.Calendars, ParsedCalendar{DateTime: datetime, Prompt: prompt, Action: "create", EventType: eventType})
+			log.Printf("[PARSER DEBUG] Added calendar event (type=%s)", eventType)
 		}
 	}
 
@@ -272,6 +324,7 @@ func ParseLLMOutput(text string) ParsedResponse {
 		minutes := 0
 		hours := 0
 		days := 0
+		eventType := "action" // default
 
 		if minMatch := scheduleMinutesRegex.FindStringSubmatch(attrs); len(minMatch) > 1 {
 			if val, err := strconv.Atoi(minMatch[1]); err == nil {
@@ -289,6 +342,12 @@ func ParseLLMOutput(text string) ParsedResponse {
 			}
 		}
 
+		// Check for type attribute on schedule tag
+		scheduleTypeRegex := regexp.MustCompile(`type=["']?([^"'\s]+)["']?`)
+		if typeMatch := scheduleTypeRegex.FindStringSubmatch(attrs); len(typeMatch) > 1 {
+			eventType = strings.ToLower(strings.TrimSpace(typeMatch[1]))
+		}
+
 		// Extract prompt from schedule content
 		schedulePrompt := ""
 		innerPromptRegex := regexp.MustCompile(`(?is)<prompt>(.*?)</prompt>`)
@@ -303,11 +362,12 @@ func ParseLLMOutput(text string) ParsedResponse {
 			resp.Calendars = append(resp.Calendars, ParsedCalendar{
 				Action:          "create",
 				Prompt:          schedulePrompt,
+				EventType:       eventType,
 				ScheduleMinutes: minutes,
 				ScheduleHours:   hours,
 				ScheduleDays:    days,
 			})
-			log.Printf("[PARSER DEBUG] Added schedule event: minutes=%d, hours=%d, days=%d", minutes, hours, days)
+			log.Printf("[PARSER DEBUG] Added schedule event: minutes=%d, hours=%d, days=%d, type=%s", minutes, hours, days, eventType)
 		}
 	}
 

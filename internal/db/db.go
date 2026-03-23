@@ -214,6 +214,7 @@ func (d *DB) migrate() error {
 		date TEXT NOT NULL,
 		time TEXT NOT NULL DEFAULT '',
 		prompt TEXT NOT NULL,
+		event_type TEXT NOT NULL DEFAULT 'action',
 		executed INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
@@ -267,6 +268,11 @@ func (d *DB) migrate() error {
 	}
 	if err := d.addColumnIfNotExists("agents", "active", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
+	}
+
+	// Migration: Add event_type column to calendar_events for CRON-like scheduling
+	if err := d.addColumnIfNotExists("calendar_events", "event_type", "TEXT NOT NULL DEFAULT 'action'"); err != nil {
+		return fmt.Errorf("failed to add event_type column: %w", err)
 	}
 
 	return nil
@@ -700,28 +706,37 @@ type CalendarEvent struct {
 	Date      string
 	Time      string
 	Prompt    string
+	EventType string // "action" (default) = call LLM, "deliver" = send directly
 	Executed  bool
 	CreatedAt string
 }
 
 func (d *DB) CreateCalendarEvent(e *CalendarEvent) (int64, error) {
+	eventType := e.EventType
+	if eventType == "" {
+		eventType = "action" // default
+	}
+	log.Printf("[DB] CreateCalendarEvent: agent_id=%d, date=%s, time=%s, event_type=%s, prompt=%s",
+		e.AgentID, e.Date, e.Time, eventType, e.Prompt)
 	res, err := d.db.Exec(`
-		INSERT INTO calendar (agent_id, date, time, prompt, executed)
-		VALUES (?, ?, ?, ?, ?)
-	`, e.AgentID, e.Date, e.Time, e.Prompt, e.Executed)
+		INSERT INTO calendar_events (agent_id, date, time, prompt, event_type, executed)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, e.AgentID, e.Date, e.Time, e.Prompt, eventType, e.Executed)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, _ := res.LastInsertId()
+	log.Printf("[DB] Calendar event created: id=%d, event_type=%s", id, eventType)
+	return id, nil
 }
 
 func (d *DB) GetCalendarEvent(id int64) (*CalendarEvent, error) {
 	e := &CalendarEvent{}
 	var executed int
 	err := d.db.QueryRow(`
-		SELECT id, agent_id, date, time, prompt, executed, created_at
-		FROM calendar WHERE id = ?
-	`, id).Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt)
+		SELECT id, agent_id, date, time, prompt, COALESCE(event_type, 'action'), executed, created_at
+		FROM calendar_events WHERE id = ?
+	`, id).Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &e.EventType, &executed, &e.CreatedAt)
 	e.Executed = executed == 1
 	if err != nil {
 		return nil, err
@@ -731,8 +746,8 @@ func (d *DB) GetCalendarEvent(id int64) (*CalendarEvent, error) {
 
 func (d *DB) ListCalendarEvents() ([]*CalendarEvent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, agent_id, date, time, prompt, executed, created_at
-		FROM calendar ORDER BY date ASC, time ASC
+		SELECT id, agent_id, date, time, prompt, COALESCE(event_type, 'action'), executed, created_at
+		FROM calendar_events ORDER BY date ASC, time ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -743,7 +758,7 @@ func (d *DB) ListCalendarEvents() ([]*CalendarEvent, error) {
 	for rows.Next() {
 		e := &CalendarEvent{}
 		var executed int
-		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &e.EventType, &executed, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.Executed = executed == 1
@@ -754,8 +769,8 @@ func (d *DB) ListCalendarEvents() ([]*CalendarEvent, error) {
 
 func (d *DB) ListCalendarEventsByAgent(agentID int64) ([]*CalendarEvent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, agent_id, date, time, prompt, executed, created_at
-		FROM calendar WHERE agent_id = ? ORDER BY date ASC, time ASC
+		SELECT id, agent_id, date, time, prompt, COALESCE(event_type, 'action'), executed, created_at
+		FROM calendar_events WHERE agent_id = ? ORDER BY date ASC, time ASC
 	`, agentID)
 	if err != nil {
 		return nil, err
@@ -766,7 +781,7 @@ func (d *DB) ListCalendarEventsByAgent(agentID int64) ([]*CalendarEvent, error) 
 	for rows.Next() {
 		e := &CalendarEvent{}
 		var executed int
-		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &e.EventType, &executed, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.Executed = executed == 1
@@ -777,8 +792,8 @@ func (d *DB) ListCalendarEventsByAgent(agentID int64) ([]*CalendarEvent, error) 
 
 func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, agent_id, date, time, prompt, executed, created_at
-		FROM calendar WHERE executed = 0 ORDER BY date ASC, time ASC
+		SELECT id, agent_id, date, time, prompt, COALESCE(event_type, 'action'), executed, created_at
+		FROM calendar_events WHERE executed = 0 ORDER BY date ASC, time ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -789,7 +804,7 @@ func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
 	for rows.Next() {
 		e := &CalendarEvent{}
 		var executed int
-		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &e.EventType, &executed, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.Executed = executed == 1
@@ -799,12 +814,19 @@ func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
 }
 
 func (d *DB) MarkCalendarEventExecuted(id int64) error {
-	_, err := d.db.Exec("UPDATE calendar SET executed = 1 WHERE id = ?", id)
-	return err
+	result, err := d.db.Exec("UPDATE calendar SET executed = 1 WHERE id = ? AND executed = 0", id)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("event already executed")
+	}
+	return nil
 }
 
 func (d *DB) DeleteCalendarEvent(id int64) error {
-	_, err := d.db.Exec("DELETE FROM calendar WHERE id = ?", id)
+	_, err := d.db.Exec("DELETE FROM calendar_events WHERE id = ?", id)
 	return err
 }
 
