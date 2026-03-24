@@ -632,6 +632,24 @@ func (d *DB) GetAllAuditLogs(category string, limit int) ([]*AuditLog, error) {
 // System messages are NOT encrypted - only user and assistant messages are encrypted.
 // Ref: docs/message-processing.md
 func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
+	// Filter out empty, whitespace-only, or invalid content for assistant messages
+	roleIsAssistant := role == "assistant" || role == "user"
+	if roleIsAssistant {
+		trimmed := strings.TrimSpace(content)
+		// Skip empty or minimal invalid responses
+		if trimmed == "" || trimmed == "." || trimmed == "..." {
+			return nil
+		}
+		// Skip content that's just FILE metadata (file delivery info)
+		if strings.HasPrefix(trimmed, "[FILE:") || strings.HasPrefix(trimmed, "FILE:") {
+			return nil
+		}
+		// Skip content that's only whitespace/control characters
+		if len(trimmed) < 2 && len(content) < 3 {
+			return nil
+		}
+	}
+
 	// Only encrypt user and assistant messages, NOT system messages
 	if d.cryptoKey != nil && role != "system" {
 		encrypted, err := crypto.Encrypt(content, d.cryptoKey)
@@ -647,6 +665,24 @@ func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
 }
 
 func (d *DB) AddHistoryWithRejection(agentID int64, userID, role, content string, isRejected bool) error {
+	// Filter out empty, whitespace-only, or invalid content for assistant messages
+	roleIsAssistant := role == "assistant" || role == "user"
+	if roleIsAssistant {
+		trimmed := strings.TrimSpace(content)
+		// Skip empty or minimal invalid responses
+		if trimmed == "" || trimmed == "." || trimmed == "..." {
+			return nil
+		}
+		// Skip content that's just FILE metadata (file delivery info)
+		if strings.HasPrefix(trimmed, "[FILE:") || strings.HasPrefix(trimmed, "FILE:") {
+			return nil
+		}
+		// Skip content that's only whitespace/control characters
+		if len(trimmed) < 2 && len(content) < 3 {
+			return nil
+		}
+	}
+
 	if d.cryptoKey != nil && role != "system" {
 		encrypted, err := crypto.Encrypt(content, d.cryptoKey)
 		if err == nil {
