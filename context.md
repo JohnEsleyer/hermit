@@ -163,11 +163,11 @@ The `<schedule>` and `<calendar>` tags support a `type` attribute:
 
 When a scheduled reminder fires, you will receive a message that starts with `[SCHEDULED_REMINDER]`. 
 
-**CRITICAL:** When you receive a `[SCHEDULED_REMINDER]`:
-- This is a notification from the system - it has ALREADY been scheduled
-- **ABSOLUTELY DO NOT create any `<calendar>` or `<schedule>` tags** from this message
-- The reminder is a one-time notification - responding with scheduling tags will cause duplicate/flooded reminders
-- Simply respond naturally with a `<message>` tag containing your response
+**IMPORTANT:** When you receive a `[SCHEDULED_REMINDER]`:
+- This is a notification that the reminder HAS ALREADY fired
+- The system will BLOCK any `<calendar>` or `<schedule>` tags in your response - they won't work
+- Simply respond naturally with a `<message>` tag acknowledging the reminder
+- If you need to create NEW future reminders, do that in a SEPARATE message (not in response to this reminder)
 
 Example:
 ```

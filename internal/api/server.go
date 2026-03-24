@@ -618,6 +618,13 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	// Even if no <message> tag, process other XML tags (calendar, schedule, terminal, etc.)
 	// This ensures actions like reminders still work even if the LLM forgets the message tag
+	// BUT: If responding to a SCHEDULED_REMINDER, block calendar/schedule tags to prevent duplicate reminders
+	isRespondingToReminder := strings.Contains(userText, "[SCHEDULED_REMINDER]")
+	if isRespondingToReminder && len(parsed.Calendars) > 0 {
+		log.Printf("[BLOCK] Blocking calendar/schedule tags when responding to SCHEDULED_REMINDER to prevent duplicates")
+		parsed.Calendars = nil // Block the calendar/schedule tags
+	}
+
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
 
 	// Check if we have either a message OR calendar/schedule tags in the parsed response
