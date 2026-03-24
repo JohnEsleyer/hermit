@@ -134,13 +134,13 @@ The `<schedule>` tag accepts any combination of relative time units. **All times
 
 The `<schedule>` and `<calendar>` tags support a `type` attribute:
 
-- **type="action"** (default): When triggered, the system calls the LLM to perform a task
-  - Use for: "Write code in 1 hour", "Analyze this data at 3pm", "Send a report tomorrow"
-  - The LLM will generate fresh content based on context at trigger time
-
-- **type="deliver"**: When triggered, the system sends the content directly as an agent message (no LLM call)
-  - Use for: Pre-written reminders, scheduled lessons, prepared content, "Teach me Japanese at 3pm"
+- **type="deliver"** (default): When triggered, the system sends the content directly as an agent message (no LLM call)
+  - Use for: Reminders, scheduled lessons, prepared content, "Teach me Japanese at 3pm"
   - The agent writes the content NOW, and it gets delivered verbatim at the scheduled time
+
+- **type="action"**: When triggered, the system calls the LLM to perform a task
+  - Use for: "Write code in 1 hour", "Analyze this data at 3pm", "Generate a report tomorrow"
+  - The LLM will generate fresh content based on context at trigger time
 
 ```xml
 <!-- ACTION: Agent will DO something at 3pm (generate report, write code, etc.) -->

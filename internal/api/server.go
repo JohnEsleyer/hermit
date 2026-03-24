@@ -3769,8 +3769,10 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 			// Create the calendar event if we have both date and time
 			if dateStr != "" && timeStr != "" {
 				eventType := cal.EventType
+				// Default to "deliver" - send directly to user without LLM call
+				// Use "action" only when explicitly specified for tasks requiring LLM
 				if eventType == "" {
-					eventType = "action"
+					eventType = "deliver"
 				}
 				_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
 					AgentID:   agentID,
