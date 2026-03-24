@@ -347,6 +347,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Get("/agents/:id/stats", s.HandleGetAgentStats)
 	api.Get("/agents/:id/context", s.HandleGetAgentContextWindow)
 	api.Get("/agents/:id/last-message", s.HandleGetLastMessage)
+	api.Get("/agents/:id/history", s.HandleGetAgentHistory)
 	api.Get("/agents/:id/unread", s.HandleGetUnreadCount)
 	api.Post("/agents/:id/mark-seen", s.HandleMarkMessagesSeen)
 
@@ -2206,6 +2207,35 @@ func (s *Server) HandleGetLastMessage(c *fiber.Ctx) error {
 
 	lastMessage := history[len(history)-1]
 	return c.JSON(fiber.Map{"content": lastMessage.Content})
+}
+
+// HandleGetAgentHistory returns the full conversation history for an agent.
+func (s *Server) HandleGetAgentHistory(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	// Get limit from query param, default to 100
+	limit := 100
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	history, err := s.db.GetHistory(id, limit)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	// Return history in chronological order (oldest first)
+	// GetHistory returns newest first, so we reverse
+	for i, j := 0, len(history)-1; i < j; i, j = i+1, j-1 {
+		history[i], history[j] = history[j], history[i]
+	}
+
+	return c.JSON(history)
 }
 
 // HandleGetUnreadCount returns the unread message count for an agent.
