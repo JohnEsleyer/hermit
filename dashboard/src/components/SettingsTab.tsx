@@ -14,8 +14,6 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     tunnelEnabled: true,
     tunnelURL: '',
     tunnelHealthy: false,
-    timezone: 'UTC',
-    timeOffset: '0',
     hasLLMKey: false,
     currentTime: '',
     currentTime12: '',
@@ -38,17 +36,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate preview time based on selected offset.
-  // Docs: See docs/time-management.md for preview calculation logic.
-  // How it works: Converts local browser time to UTC, then adds offset to preview the result.
-  const getPreviewTime = () => {
-    // We use serverUtcTime (actual UTC) as the base for all calculations to avoid local clock drift
-    const base = settings.serverUtcTime ? new Date(settings.serverUtcTime) : new Date();
-    const offset = parseInt(settings.timeOffset || '0');
-    // serverUtcTime is already UTC, so we just add the offset hours
-    const preview = new Date(base.getTime() + (offset * 3600000));
-    return preview.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
-  };
+
   const [apiKeys, setApiKeys] = useState({
     openrouterKey: '',
     openaiKey: '',
@@ -176,8 +164,6 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
 
       setSettings({
         ...data,
-        timezone: data.timezone || 'UTC',
-        timeOffset: data.timeOffset || '0',
         currentTime: timeData.time || '',
         currentTime12: timeData.time12 || '',
         currentDate: timeData.date || '',
@@ -211,8 +197,6 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     try {
       const payload: any = {
         tunnelEnabled: settings.tunnelEnabled,
-        timezone: settings.timezone,
-        timeOffset: settings.timeOffset,
         ...specificKeys
       };
 
@@ -401,143 +385,23 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Time Display Cards */}
-            <div className="grid grid-cols-3 gap-4">
-              {/* Active System Time (from Server) */}
-              <div className="bg-emerald-500/10 rounded-2xl p-6 border border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
-                <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1 font-black">Global System Time</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-emerald-500/10 rounded-2xl p-6 border border-emerald-500/30">
+                <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1 font-black">Server Time</div>
                 <div className="text-3xl font-mono font-bold text-emerald-400">
                   {settings.currentTime12 || '--:--:--'}
                 </div>
-                <div className="text-[10px] text-emerald-400/70 mt-1 flex items-center gap-1.5 font-bold">
-                  <Globe className="w-3 h-3" />
-                  ACTIVE OFFSET: UTC{parseInt(settings.timeOffset || '0') >= 0 ? '+' : ''}{settings.timeOffset || 0}h
-                </div>
               </div>
-
-              {/* Your Browser Time */}
               <div className="bg-zinc-900/50 rounded-2xl p-6 border border-zinc-800">
-                <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Your Browser Time</div>
+                <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Your Local Time</div>
                 <div className="text-3xl font-mono font-bold text-zinc-400">
                   {localTime}
                 </div>
-                <div className="text-[10px] text-zinc-500/70 mt-1 font-bold">
-                  FROM COMPUTER
-                </div>
-              </div>
-
-              {/* System Time Preview (based on selection) */}
-              <div className="bg-blue-500/10 rounded-2xl p-6 border border-blue-500/30">
-                <div className="text-xs text-blue-400 uppercase tracking-wider mb-1">System Time Preview</div>
-                <div className="text-3xl font-mono font-bold text-blue-400">
-                  {getPreviewTime()}
-                </div>
-                <div className="text-[10px] text-blue-400/70 mt-1 font-bold">
-                  SELECTED: UTC{parseInt(settings.timeOffset || '0') >= 0 ? '+' : ''}{settings.timeOffset || 0}h
-                </div>
               </div>
             </div>
-
-            {/* Custom Offset Slider */}
-            <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-6 space-y-4">
-              <div className="flex justify-between items-center">
-                <label className="block text-xs text-zinc-500 uppercase tracking-wider font-bold">Custom Slider</label>
-                <div className="px-3 py-1 bg-blue-500 text-white rounded-lg font-black text-sm shadow-lg shadow-blue-500/20">
-                  {settings.timeOffset}h
-                </div>
-              </div>
-              <input
-                type="range"
-                min="-12"
-                max="14"
-                step="1"
-                value={settings.timeOffset}
-                onChange={e => setSettings({ ...settings, timeOffset: e.target.value })}
-                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all border border-zinc-700"
-              />
-              <div className="flex justify-between text-[10px] text-zinc-500 font-medium px-1">
-                <span>-12h</span>
-                <span>UTC</span>
-                <span>+14h</span>
-              </div>
-            </div>
-
-            {/* Offset Presets */}
-            <div>
-              <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-3">
-                Presets
-              </label>
-              <div className="grid grid-cols-4 gap-3">
-                {[
-                  { label: 'UTC', value: '0', desc: 'London' },
-                  { label: '+8h', value: '8', desc: 'Philippines' },
-                  { label: '+9h', value: '9', desc: 'Tokyo' },
-                  { label: '+1h', value: '1', desc: 'Paris' },
-                  { label: '-5h', value: '-5', desc: 'New York' },
-                  { label: '-8h', value: '-8', desc: 'Los Angeles' },
-                  { label: '+5h', value: '5', desc: 'Dubai' },
-                  { label: '+3h', value: '3', desc: 'Moscow' },
-                ].map(preset => (
-                  <button
-                    key={preset.value}
-                    type="button"
-                    onClick={() => {
-                      setSettings(s => ({ ...s, timeOffset: preset.value }));
-                    }}
-                    className={`py-3 px-4 rounded-xl text-sm font-medium transition-all ${settings.timeOffset === preset.value
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
-                      }`}
-                  >
-                    <div className="font-bold">{preset.label}</div>
-                    <div className="text-xs opacity-70">{preset.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center pt-2">
-              <p className="text-xs text-zinc-500">
-                This offset is applied to all scheduled events and the dashboard clock.
-              </p>
-              <button
-                onClick={async () => {
-                  setSaving(true);
-                  try {
-                    const res = await fetch(`${API_BASE}/api/settings`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        timeOffset: settings.timeOffset,
-                        timezone: settings.timezone,
-                      }),
-                    });
-                    if (res.ok) {
-                      triggerToast('Time settings saved');
-                      const timeRes = await fetch(`${API_BASE}/api/time`);
-                      const timeData = await timeRes.json();
-                      setSettings(s => ({
-                        ...s,
-                        currentTime: timeData.time,
-                        currentTime12: timeData.time12,
-                        currentDate: timeData.date,
-                        serverUtcTime: timeData.serverUtcTime,
-                        timeOffset: timeData.offset || timeData.timeOffset || s.timeOffset
-                      }));
-                    } else {
-                      triggerToast('Failed to save', 'error');
-                    }
-                  } catch (err) {
-                    triggerToast('Failed to save', 'error');
-                  }
-                  setSaving(false);
-                }}
-                disabled={saving}
-                className="bg-white text-black px-8 py-3 rounded-full text-sm font-bold hover:bg-zinc-200 transition-colors disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Save Time Settings'}
-              </button>
-            </div>
+            <p className="text-xs text-zinc-500">
+              Time is displayed in your device's local timezone. Calendar events and schedules use local time.
+            </p>
           </div>
         )}
       </div>

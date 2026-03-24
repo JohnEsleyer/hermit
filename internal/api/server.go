@@ -2540,6 +2540,17 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 	anthropicKey, _ := s.db.GetSetting("anthropic_api_key")
 	geminiKey, _ := s.db.GetSetting("gemini_api_key")
 
+	// Mask API keys for security - only return first 4 and last 4 characters
+	maskKey := func(key string) string {
+		if key == "" {
+			return ""
+		}
+		if len(key) <= 8 {
+			return "****"
+		}
+		return key[:4] + "..." + key[len(key)-4:]
+	}
+
 	tunnelURL := s.tunnels.GetURL("dashboard")
 	isHealthy := s.tunnels.CheckTunnelHealth("dashboard", 2*time.Second)
 
@@ -2560,16 +2571,16 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 		}
 	}
 
-	// Return actual key values so client can populate the settings form
+	// Return masked key values so client can show whether keys are set
 	return c.JSON(fiber.Map{
 		"tunnelEnabled": tunnelEnabled == "true",
 		"tunnelURL":     tunnelURL,
 		"tunnelHealthy": isHealthy,
 		"status":        status,
-		"openrouterKey": openrouterKey,
-		"openaiKey":     openaiKey,
-		"anthropicKey":  anthropicKey,
-		"geminiKey":     geminiKey,
+		"openrouterKey": maskKey(openrouterKey),
+		"openaiKey":     maskKey(openaiKey),
+		"anthropicKey":  maskKey(anthropicKey),
+		"geminiKey":     maskKey(geminiKey),
 		"hasLLMKey":     openrouterKey != "" || openaiKey != "" || anthropicKey != "" || geminiKey != "",
 	})
 }
