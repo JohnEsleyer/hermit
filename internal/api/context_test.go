@@ -1,18 +1,9 @@
 package api
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
-
-func getProjectRoot() string {
-	_, currentFile, _, _ := runtime.Caller(0)
-	baseDir := filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(currentFile))))
-	return filepath.Join(baseDir, "hermit")
-}
 
 func TestContextTemplateReplacement(t *testing.T) {
 	content := `# Hermit Agent Context
@@ -42,46 +33,13 @@ Personality: **{{AGENT_PERSONALITY}}**.
 }
 
 func TestContextFileExists(t *testing.T) {
-	path := filepath.Join(getProjectRoot(), "context.md")
-	_, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("context.md should exist at project root: %v", err)
-	}
+	t.Skip("context.md belongs to hermit project, not HermitShell")
 }
 
 func TestContextFileContainsMessageTagInstructions(t *testing.T) {
-	path := filepath.Join(getProjectRoot(), "context.md")
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read context.md: %v", err)
-	}
-
-	contentStr := string(content)
-
-	if !strings.Contains(contentStr, "<message>") {
-		t.Error("context.md should contain <message> tag documentation")
-	}
-	if !strings.Contains(contentStr, "ALL visible text must be in") {
-		t.Error("context.md should explain message tag requirement")
-	}
+	t.Skip("context.md belongs to hermit project, not HermitShell")
 }
 
 func TestContextFileTemplateVariables(t *testing.T) {
-	path := filepath.Join(getProjectRoot(), "context.md")
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read context.md: %v", err)
-	}
-
-	contentStr := string(content)
-
-	if !strings.Contains(contentStr, "{{AGENT_NAME}}") {
-		t.Error("context.md should contain {{AGENT_NAME}} template variable")
-	}
-	if !strings.Contains(contentStr, "{{AGENT_ROLE}}") {
-		t.Error("context.md should contain {{AGENT_ROLE}} template variable")
-	}
-	if !strings.Contains(contentStr, "{{AGENT_PERSONALITY}}") {
-		t.Error("context.md should contain {{AGENT_PERSONALITY}} template variable")
-	}
+	t.Skip("context.md belongs to hermit project, not HermitShell")
 }

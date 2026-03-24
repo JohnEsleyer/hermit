@@ -26,7 +26,7 @@ func TestHandleTunnelWithHealthyTunnel(t *testing.T) {
 	defer func() { apiBase = oldAPIBase }()
 
 	tunnelCmd := newTunnelCmd()
-	handleTunnel(tunnelCmd)
+	handleTunnel(nil, tunnelCmd)
 }
 
 func TestHandleTunnelWithUnhealthyTunnel(t *testing.T) {
@@ -44,7 +44,7 @@ func TestHandleTunnelWithUnhealthyTunnel(t *testing.T) {
 	defer func() { apiBase = oldAPIBase }()
 
 	tunnelCmd := newTunnelCmd()
-	handleTunnel(tunnelCmd)
+	handleTunnel(nil, tunnelCmd)
 }
 
 func TestHandleTunnelNoTunnel(t *testing.T) {
@@ -69,7 +69,7 @@ func TestHandleTunnelNoTunnel(t *testing.T) {
 	}
 	defer func() { exitFunc = os.Exit }()
 
-	handleTunnel(tunnelCmd)
+	handleTunnel(nil, tunnelCmd)
 
 	if !exited {
 		t.Error("Expected exit for no tunnel")
@@ -98,7 +98,7 @@ func TestHandleTunnelDomainMode(t *testing.T) {
 	}
 	defer func() { exitFunc = os.Exit }()
 
-	handleTunnel(tunnelCmd)
+	handleTunnel(nil, tunnelCmd)
 	if !exited {
 		t.Error("Expected exit for domain mode")
 	}

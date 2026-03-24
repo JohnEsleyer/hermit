@@ -8,11 +8,14 @@
 package db
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/JohnEsleyer/HermitShell/internal/crypto"
@@ -76,6 +79,8 @@ type HistoryEntry struct {
 	Role        string `json:"role"`
 	Content     string `json:"content"`
 	IsProcessed bool   `json:"is_processed"`
+	IsSeen      bool   `json:"is_seen"`
+	IsRejected  bool   `json:"is_rejected"`
 	CreatedAt   string `json:"created_at"`
 }
 
@@ -210,9 +215,19 @@ func (d *DB) migrate() error {
 		date TEXT NOT NULL,
 		time TEXT NOT NULL DEFAULT '',
 		prompt TEXT NOT NULL,
+		event_type TEXT NOT NULL DEFAULT 'action',
 		executed INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS sessions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		token TEXT NOT NULL UNIQUE,
+		user_id INTEGER NOT NULL,
+		expires_at TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		FOREIGN KEY(user_id) REFERENCES users(id)
 	);
 
 	CREATE TABLE IF NOT EXISTS apps (
@@ -235,6 +250,16 @@ func (d *DB) migrate() error {
 		return fmt.Errorf("failed to add is_processed column: %w", err)
 	}
 
+	// Migration: Add is_seen column for unread tracking
+	if err := d.addColumnIfNotExists("history", "is_seen", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return fmt.Errorf("failed to add is_seen column: %w", err)
+	}
+
+	// Migration: Add is_rejected column for tracking rejected XML commands
+	if err := d.addColumnIfNotExists("history", "is_rejected", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("failed to add is_rejected column: %w", err)
+	}
+
 	// Add new columns to existing databases if they don't exist
 	if err := d.addColumnIfNotExists("agents", "llm_api_calls", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
@@ -253,6 +278,11 @@ func (d *DB) migrate() error {
 	}
 	if err := d.addColumnIfNotExists("agents", "active", "INTEGER NOT NULL DEFAULT 1"); err != nil {
 		return err
+	}
+
+	// Migration: Add event_type column to calendar_events for CRON-like scheduling
+	if err := d.addColumnIfNotExists("calendar_events", "event_type", "TEXT NOT NULL DEFAULT 'action'"); err != nil {
+		return fmt.Errorf("failed to add event_type column: %w", err)
 	}
 
 	return nil
@@ -453,6 +483,88 @@ func (d *DB) GetUserByID(id int64) (string, bool, error) {
 	return username, mustChange == 1, nil
 }
 
+// CreateSession creates a new secure session token for the user.
+// Returns the token string on success.
+func (d *DB) CreateSession(userID int64, expiryHours int) (string, error) {
+	// Generate 32-byte random token using crypto/rand
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", fmt.Errorf("failed to generate token: %w", err)
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	// Calculate expiry time
+	expiresAt := time.Now().Add(time.Duration(expiryHours) * time.Hour)
+
+	// Delete any existing sessions for this user (single session per user)
+	d.db.Exec("DELETE FROM sessions WHERE user_id = ?", userID)
+
+	// Insert new session
+	_, err := d.db.Exec(`
+		INSERT INTO sessions (token, user_id, expires_at)
+		VALUES (?, ?, ?)
+	`, token, userID, expiresAt.Format(time.RFC3339))
+
+	if err != nil {
+		return "", fmt.Errorf("failed to create session: %w", err)
+	}
+
+	log.Printf("[AUTH] Created session for user_id=%d, expires=%s", userID, expiresAt.Format(time.RFC3339))
+	return token, nil
+}
+
+// ValidateSession checks if a token is valid and returns the user ID.
+// Returns (userID, mustChangePassword, error)
+func (d *DB) ValidateSession(token string) (int64, bool, error) {
+	if token == "" {
+		return 0, false, fmt.Errorf("empty token")
+	}
+
+	var userID int64
+	var expiresAt string
+	err := d.db.QueryRow(`
+		SELECT user_id, expires_at FROM sessions WHERE token = ?
+	`, token).Scan(&userID, &expiresAt)
+
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+
+	// Check if session has expired
+	expiry, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid expiry format: %w", err)
+	}
+	if time.Now().After(expiry) {
+		// Delete expired session
+		d.db.Exec("DELETE FROM sessions WHERE token = ?", token)
+		return 0, false, nil
+	}
+
+	// Get user info
+	_, mustChange, err := d.GetUserByID(userID)
+	return userID, mustChange, err
+}
+
+// DeleteSession removes a session by token.
+func (d *DB) DeleteSession(token string) error {
+	_, err := d.db.Exec("DELETE FROM sessions WHERE token = ?", token)
+	return err
+}
+
+// CleanupExpiredSessions removes all expired sessions.
+func (d *DB) CleanupExpiredSessions() (int, error) {
+	result, err := d.db.Exec("DELETE FROM sessions WHERE expires_at < ?", time.Now().Format(time.RFC3339))
+	if err != nil {
+		return 0, err
+	}
+	rows, _ := result.RowsAffected()
+	return int(rows), nil
+}
+
 // LogAction inserts an audit log entry for tracking system events.
 // Docs: See docs/logging.md for log categories and usage patterns.
 func (d *DB) LogAction(agentID int64, userID, action, details string) error {
@@ -515,11 +627,34 @@ func (d *DB) GetAllAuditLogs(category string, limit int) ([]*AuditLog, error) {
 	}
 	return logs, nil
 }
+
+// AddHistory stores a message in history.
+// System messages are NOT encrypted - only user and assistant messages are encrypted.
+// Ref: docs/message-processing.md
 func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
-	if d.cryptoKey != nil {
+	// Filter out empty, whitespace-only, or invalid content for assistant messages
+	roleIsAssistant := role == "assistant" || role == "user"
+	if roleIsAssistant {
+		trimmed := strings.TrimSpace(content)
+		// Skip empty or minimal invalid responses
+		if trimmed == "" || trimmed == "." || trimmed == "..." {
+			return nil
+		}
+		// Skip content that's just FILE metadata (file delivery info)
+		if strings.HasPrefix(trimmed, "[FILE:") || strings.HasPrefix(trimmed, "FILE:") {
+			return nil
+		}
+		// Skip content that's only whitespace/control characters
+		if len(trimmed) < 2 && len(content) < 3 {
+			return nil
+		}
+	}
+
+	// Only encrypt user and assistant messages, NOT system messages
+	if d.cryptoKey != nil && role != "system" {
 		encrypted, err := crypto.Encrypt(content, d.cryptoKey)
 		if err == nil {
-			content = "enc:" + encrypted
+			content = "cbc:" + encrypted // Use CBC prefix for new encryptions
 		}
 	}
 	_, err := d.db.Exec(`
@@ -529,9 +664,45 @@ func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
 	return err
 }
 
+func (d *DB) AddHistoryWithRejection(agentID int64, userID, role, content string, isRejected bool) error {
+	// Filter out empty, whitespace-only, or invalid content for assistant messages
+	roleIsAssistant := role == "assistant" || role == "user"
+	if roleIsAssistant {
+		trimmed := strings.TrimSpace(content)
+		// Skip empty or minimal invalid responses
+		if trimmed == "" || trimmed == "." || trimmed == "..." {
+			return nil
+		}
+		// Skip content that's just FILE metadata (file delivery info)
+		if strings.HasPrefix(trimmed, "[FILE:") || strings.HasPrefix(trimmed, "FILE:") {
+			return nil
+		}
+		// Skip content that's only whitespace/control characters
+		if len(trimmed) < 2 && len(content) < 3 {
+			return nil
+		}
+	}
+
+	if d.cryptoKey != nil && role != "system" {
+		encrypted, err := crypto.Encrypt(content, d.cryptoKey)
+		if err == nil {
+			content = "cbc:" + encrypted // Use CBC prefix for new encryptions
+		}
+	}
+	rejectedVal := 0
+	if isRejected {
+		rejectedVal = 1
+	}
+	_, err := d.db.Exec(`
+		INSERT INTO history (agent_id, user_id, role, content, is_rejected)
+		VALUES (?, ?, ?, ?, ?)
+	`, agentID, userID, role, content, rejectedVal)
+	return err
+}
+
 func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 	rows, err := d.db.Query(`
-		SELECT id, agent_id, user_id, role, content, created_at
+		SELECT id, agent_id, user_id, role, content, is_processed, is_seen, is_rejected, created_at
 		FROM history WHERE agent_id = ? ORDER BY id DESC LIMIT ?
 	`, agentID, limit)
 	if err != nil {
@@ -542,13 +713,33 @@ func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 	var entries []*HistoryEntry
 	for rows.Next() {
 		e := &HistoryEntry{}
-		if err := rows.Scan(&e.ID, &e.AgentID, &e.UserID, &e.Role, &e.Content, &e.CreatedAt); err != nil {
+		var isProcessed, isSeen, isRejected int
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.UserID, &e.Role, &e.Content, &isProcessed, &isSeen, &isRejected, &e.CreatedAt); err != nil {
 			return nil, err
 		}
-		if d.cryptoKey != nil && len(e.Content) > 4 && e.Content[:4] == "enc:" {
-			decrypted, err := crypto.Decrypt(e.Content[4:], d.cryptoKey)
-			if err == nil {
-				e.Content = decrypted
+		e.IsProcessed = isProcessed == 1
+		e.IsSeen = isSeen == 1
+		e.IsRejected = isRejected == 1
+
+		// Decrypt message content - pass full content with prefix for crypto.Decrypt to handle
+		if d.cryptoKey != nil && len(e.Content) > 4 {
+			// Determine the prefix to use
+			var prefix string
+			if strings.HasPrefix(e.Content, "cbc:") {
+				prefix = "cbc:"
+			} else if strings.HasPrefix(e.Content, "enc:") {
+				prefix = "enc:"
+			}
+
+			if prefix != "" {
+				encrypted := e.Content[len(prefix):]
+				decrypted, err := crypto.Decrypt(prefix+encrypted, d.cryptoKey)
+				if err != nil {
+					log.Printf("[ERROR] Failed to decrypt history entry %d (%s): %v", e.ID, prefix, err)
+					e.Content = "[Decryption failed: " + err.Error() + "]"
+				} else {
+					e.Content = decrypted
+				}
 			}
 		}
 		entries = append(entries, e)
@@ -559,6 +750,17 @@ func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 func (d *DB) ClearHistory(agentID int64) error {
 	_, err := d.db.Exec("DELETE FROM history WHERE agent_id = ?", agentID)
 	return err
+}
+
+func (d *DB) MarkHistorySeen(agentID int64) error {
+	_, err := d.db.Exec("UPDATE history SET is_seen = 1 WHERE agent_id = ?", agentID)
+	return err
+}
+
+func (d *DB) GetUnseenCount(agentID int64) (int, error) {
+	var count int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM history WHERE agent_id = ? AND is_seen = 0", agentID).Scan(&count)
+	return count, err
 }
 
 type AllowListEntry struct {
@@ -632,28 +834,37 @@ type CalendarEvent struct {
 	Date      string
 	Time      string
 	Prompt    string
+	EventType string // "action" (default) = call LLM, "deliver" = send directly
 	Executed  bool
 	CreatedAt string
 }
 
 func (d *DB) CreateCalendarEvent(e *CalendarEvent) (int64, error) {
+	eventType := e.EventType
+	if eventType == "" {
+		eventType = "action" // default
+	}
+	log.Printf("[DB] CreateCalendarEvent: agent_id=%d, date=%s, time=%s, event_type=%s, prompt=%s",
+		e.AgentID, e.Date, e.Time, eventType, e.Prompt)
 	res, err := d.db.Exec(`
-		INSERT INTO calendar (agent_id, date, time, prompt, executed)
-		VALUES (?, ?, ?, ?, ?)
-	`, e.AgentID, e.Date, e.Time, e.Prompt, e.Executed)
+		INSERT INTO calendar_events (agent_id, date, time, prompt, event_type, executed)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, e.AgentID, e.Date, e.Time, e.Prompt, eventType, e.Executed)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, _ := res.LastInsertId()
+	log.Printf("[DB] Calendar event created: id=%d, event_type=%s", id, eventType)
+	return id, nil
 }
 
 func (d *DB) GetCalendarEvent(id int64) (*CalendarEvent, error) {
 	e := &CalendarEvent{}
 	var executed int
 	err := d.db.QueryRow(`
-		SELECT id, agent_id, date, time, prompt, executed, created_at
-		FROM calendar WHERE id = ?
-	`, id).Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt)
+		SELECT id, agent_id, date, time, prompt, COALESCE(event_type, 'action'), executed, created_at
+		FROM calendar_events WHERE id = ?
+	`, id).Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &e.EventType, &executed, &e.CreatedAt)
 	e.Executed = executed == 1
 	if err != nil {
 		return nil, err
@@ -663,8 +874,8 @@ func (d *DB) GetCalendarEvent(id int64) (*CalendarEvent, error) {
 
 func (d *DB) ListCalendarEvents() ([]*CalendarEvent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, agent_id, date, time, prompt, executed, created_at
-		FROM calendar ORDER BY date ASC, time ASC
+		SELECT id, agent_id, date, time, prompt, COALESCE(event_type, 'action'), executed, created_at
+		FROM calendar_events ORDER BY date ASC, time ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -675,7 +886,7 @@ func (d *DB) ListCalendarEvents() ([]*CalendarEvent, error) {
 	for rows.Next() {
 		e := &CalendarEvent{}
 		var executed int
-		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &e.EventType, &executed, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.Executed = executed == 1
@@ -686,8 +897,8 @@ func (d *DB) ListCalendarEvents() ([]*CalendarEvent, error) {
 
 func (d *DB) ListCalendarEventsByAgent(agentID int64) ([]*CalendarEvent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, agent_id, date, time, prompt, executed, created_at
-		FROM calendar WHERE agent_id = ? ORDER BY date ASC, time ASC
+		SELECT id, agent_id, date, time, prompt, COALESCE(event_type, 'action'), executed, created_at
+		FROM calendar_events WHERE agent_id = ? ORDER BY date ASC, time ASC
 	`, agentID)
 	if err != nil {
 		return nil, err
@@ -698,7 +909,7 @@ func (d *DB) ListCalendarEventsByAgent(agentID int64) ([]*CalendarEvent, error) 
 	for rows.Next() {
 		e := &CalendarEvent{}
 		var executed int
-		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &e.EventType, &executed, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.Executed = executed == 1
@@ -709,8 +920,8 @@ func (d *DB) ListCalendarEventsByAgent(agentID int64) ([]*CalendarEvent, error) 
 
 func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, agent_id, date, time, prompt, executed, created_at
-		FROM calendar WHERE executed = 0 ORDER BY date ASC, time ASC
+		SELECT id, agent_id, date, time, prompt, COALESCE(event_type, 'action'), executed, created_at
+		FROM calendar_events WHERE executed = 0 ORDER BY date ASC, time ASC
 	`)
 	if err != nil {
 		return nil, err
@@ -721,7 +932,7 @@ func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
 	for rows.Next() {
 		e := &CalendarEvent{}
 		var executed int
-		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &e.EventType, &executed, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.Executed = executed == 1
@@ -731,12 +942,19 @@ func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
 }
 
 func (d *DB) MarkCalendarEventExecuted(id int64) error {
-	_, err := d.db.Exec("UPDATE calendar SET executed = 1 WHERE id = ?", id)
-	return err
+	result, err := d.db.Exec("UPDATE calendar_events SET executed = 1 WHERE id = ? AND executed = 0", id)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("event already executed")
+	}
+	return nil
 }
 
 func (d *DB) DeleteCalendarEvent(id int64) error {
-	_, err := d.db.Exec("DELETE FROM calendar WHERE id = ?", id)
+	_, err := d.db.Exec("DELETE FROM calendar_events WHERE id = ?", id)
 	return err
 }
 

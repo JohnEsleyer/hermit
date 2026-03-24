@@ -111,3 +111,24 @@ func (s *Server) ensureConsoleTestAssets(agent *db.Agent) error {
 	}
 	return nil
 }
+
+// broadcastAgentMessage broadcasts ONLY the parsed message content to HermitChat UI
+// This sends clean text without XML tags for end-user display
+// The raw response with tags is stored in history separately for debugging
+func (s *Server) broadcastAgentMessage(agentID int64, userID, message string) {
+	if message == "" {
+		return
+	}
+
+	payload := map[string]interface{}{
+		"type":     "new_message",
+		"agent_id": agentID,
+		"user_id":  userID,
+		"role":     "assistant",
+		"content":  message,
+	}
+
+	if jsonMsg, err := json.Marshal(payload); err == nil {
+		s.BroadcastMessage(string(jsonMsg))
+	}
+}

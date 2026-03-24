@@ -7,6 +7,7 @@ package parser
 import (
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -28,10 +29,15 @@ type ParsedAction struct {
 }
 
 type ParsedCalendar struct {
-	DateTime string `json:"datetime,omitempty"`
-	Prompt   string `json:"prompt,omitempty"`
-	ID       string `json:"id,omitempty"`
-	Action   string `json:"action,omitempty"` // "create", "list", "delete", "update"
+	DateTime  string `json:"datetime,omitempty"`
+	Prompt    string `json:"prompt,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Action    string `json:"action,omitempty"`    // "create", "list", "delete", "update"
+	EventType string `json:"eventType,omitempty"` // "action" (default) or "deliver"
+	// Relative time support via <schedule minutes="N" hours="N" days="N">
+	ScheduleMinutes int `json:"scheduleMinutes,omitempty"`
+	ScheduleHours   int `json:"scheduleHours,omitempty"`
+	ScheduleDays    int `json:"scheduleDays,omitempty"`
 }
 
 // ParsedApp represents a parsed <app> tag with HTML, CSS, and JS content.
@@ -66,6 +72,11 @@ var (
 	calendarListRegex   = regexp.MustCompile(`(?is)<calendar\s+action=["']?list["']?\s*/>`)
 	calendarDeleteRegex = regexp.MustCompile(`(?is)<calendar\s+action=["']?delete["']?\s+id=["']?([^"'>]+)["']?\s*/>`)
 	calendarUpdateRegex = regexp.MustCompile(`(?is)<calendar\s+action=["']?update["']?\s+id=["']?([^"'>]+)["']?>(.*?)</calendar>`)
+	// Calendar type attribute for CRON-like scheduling
+	// type="action" (default) = call LLM to process when triggered
+	// type="deliver" = send content directly as agent message (no LLM call)
+	calendarTypeRegex   = regexp.MustCompile(`(?is)<calendar\s+type=["']?([^"'>]+)["']?\s*>`)
+	calendarCreateRegex = regexp.MustCompile(`(?is)<calendar\s+type=["']?([^"'>]+)["']?\s*>(.*?)</calendar>`)
 	// New tags: <give>, <app>
 	giveRegex    = regexp.MustCompile(`(?is)<give>(.*?)</give>`)
 	appRegex     = regexp.MustCompile(`(?is)<app\s+name=["']?([^"'>]+)["']?>(.*?)</app>`)
@@ -73,11 +84,22 @@ var (
 	appCSSRegex  = regexp.MustCompile(`(?is)<style>(.*?)</style>`)
 	appJSRegex   = regexp.MustCompile(`(?is)<script>(.*?)</script>`)
 	deployRegex  = regexp.MustCompile(`(?is)<deploy>(.*?)</deploy>`)
+	// New unified <schedule> tag for relative time scheduling
+	// Usage: <schedule minutes="3" hours="1" days="2">reminder text</schedule>
+	scheduleMinutesRegex = regexp.MustCompile(`minutes=["']?(\d+)["']?`)
+	scheduleHoursRegex   = regexp.MustCompile(`hours=["']?(\d+)["']?`)
+	scheduleDaysRegex    = regexp.MustCompile(`days=["']?(\d+)["']?`)
 )
 
 // ParseLLMOutput parses XML tags from LLM response.
 // Docs: See docs/xml-tags.md for all supported tags.
 // Supported tags: <message>, <terminal>, <give>, <app>, <skill>, <calendar>, <thought>, <system>
+//
+// Rules:
+// - <message> tags: Extracted for user transport (Telegram/HermitChat)
+// - <thought> tags: Internal only, NOT sent to user
+// - Plain text outside tags: Ignored (not sent to user)
+// - At least one <message> tag is REQUIRED, otherwise response is rejected
 func ParseLLMOutput(text string) ParsedResponse {
 	log.Printf("[PARSER] Input text: %s", text)
 
@@ -93,6 +115,8 @@ func ParseLLMOutput(text string) ParsedResponse {
 		resp.Thought = strings.TrimSpace(m[1])
 	}
 
+	// Extract <message> tag content
+	// Plain text outside tags is IGNORED - only <message> content goes to user
 	if m := messageRegex.FindStringSubmatch(text); len(m) > 1 {
 		resp.Message = strings.TrimSpace(m[1])
 	}
@@ -228,14 +252,123 @@ func ParseLLMOutput(text string) ParsedResponse {
 		}
 
 		if prompt != "" || datetime != "" {
-			resp.Calendars = append(resp.Calendars, ParsedCalendar{DateTime: datetime, Prompt: prompt, Action: "create"})
-			log.Printf("[PARSER DEBUG] Added calendar event")
+			resp.Calendars = append(resp.Calendars, ParsedCalendar{DateTime: datetime, Prompt: prompt, Action: "create", EventType: "action"})
+			log.Printf("[PARSER DEBUG] Added calendar event (type=action)")
+		}
+	}
+
+	// Handle <calendar type="deliver"> or <calendar type="action"> with explicit type
+	typeMatches := calendarCreateRegex.FindAllStringSubmatch(text, -1)
+	for _, m := range typeMatches {
+		if len(m) < 3 {
+			continue
+		}
+		eventType := strings.ToLower(strings.TrimSpace(m[1]))
+		calendarContent := m[2]
+
+		// Skip if this was already processed by the basic calendarRegex
+		// Only process if type is explicitly "deliver"
+		if eventType != "deliver" && eventType != "action" {
+			continue
+		}
+
+		log.Printf("[PARSER DEBUG] calendar with type=%s, content: %s", eventType, calendarContent)
+
+		// Extract prompt
+		promptRegex := regexp.MustCompile(`(?is)<prompt>(.*?)</prompt>`)
+		prompt := ""
+		if pm := promptRegex.FindStringSubmatch(calendarContent); len(pm) > 1 {
+			prompt = strings.TrimSpace(pm[1])
+		}
+
+		// Extract datetime
+		datetime := ""
+		if dt := calendarDateTimeRegex.FindStringSubmatch(calendarContent); len(dt) > 1 {
+			datetime = strings.TrimSpace(dt[1])
+		} else {
+			dateVal := ""
+			timeVal := ""
+			if d := calendarDateRegex.FindStringSubmatch(calendarContent); len(d) > 1 {
+				dateVal = strings.TrimSpace(d[1])
+			}
+			if t := calendarTimeRegex.FindStringSubmatch(calendarContent); len(t) > 1 {
+				timeVal = strings.TrimSpace(t[1])
+			}
+			datetime = strings.TrimSpace(strings.TrimSpace(dateVal) + " " + strings.TrimSpace(timeVal))
+		}
+
+		if prompt != "" || datetime != "" {
+			resp.Calendars = append(resp.Calendars, ParsedCalendar{DateTime: datetime, Prompt: prompt, Action: "create", EventType: eventType})
+			log.Printf("[PARSER DEBUG] Added calendar event (type=%s)", eventType)
 		}
 	}
 
 	// Handle calendar list action
 	if calendarListRegex.FindStringIndex(text) != nil {
 		resp.Calendars = append(resp.Calendars, ParsedCalendar{Action: "list"})
+	}
+
+	// Handle unified <schedule> tag for relative time scheduling
+	// Usage: <schedule minutes="3">...</schedule>
+	//        <schedule hours="1" minutes="30">...</schedule>
+	//        <schedule days="2">...</schedule>
+	scheduleTagRegex := regexp.MustCompile(`(?is)<schedule\s+([^>]*)>(.*?)</schedule>`)
+	scheduleMatches := scheduleTagRegex.FindAllStringSubmatch(text, -1)
+	for _, m := range scheduleMatches {
+		if len(m) < 3 {
+			continue
+		}
+		attrs := m[1]
+		scheduleContent := m[2]
+
+		minutes := 0
+		hours := 0
+		days := 0
+		eventType := "action" // default
+
+		if minMatch := scheduleMinutesRegex.FindStringSubmatch(attrs); len(minMatch) > 1 {
+			if val, err := strconv.Atoi(minMatch[1]); err == nil {
+				minutes = val
+			}
+		}
+		if hrMatch := scheduleHoursRegex.FindStringSubmatch(attrs); len(hrMatch) > 1 {
+			if val, err := strconv.Atoi(hrMatch[1]); err == nil {
+				hours = val
+			}
+		}
+		if dayMatch := scheduleDaysRegex.FindStringSubmatch(attrs); len(dayMatch) > 1 {
+			if val, err := strconv.Atoi(dayMatch[1]); err == nil {
+				days = val
+			}
+		}
+
+		// Check for type attribute on schedule tag
+		scheduleTypeRegex := regexp.MustCompile(`type=["']?([^"'\s]+)["']?`)
+		if typeMatch := scheduleTypeRegex.FindStringSubmatch(attrs); len(typeMatch) > 1 {
+			eventType = strings.ToLower(strings.TrimSpace(typeMatch[1]))
+		}
+
+		// Extract prompt from schedule content
+		schedulePrompt := ""
+		innerPromptRegex := regexp.MustCompile(`(?is)<prompt>(.*?)</prompt>`)
+		if pm := innerPromptRegex.FindStringSubmatch(scheduleContent); len(pm) > 1 {
+			schedulePrompt = strings.TrimSpace(pm[1])
+		} else {
+			// Use the content itself as the prompt if no <prompt> tag
+			schedulePrompt = strings.TrimSpace(scheduleContent)
+		}
+
+		if schedulePrompt != "" && (minutes > 0 || hours > 0 || days > 0) {
+			resp.Calendars = append(resp.Calendars, ParsedCalendar{
+				Action:          "create",
+				Prompt:          schedulePrompt,
+				EventType:       eventType,
+				ScheduleMinutes: minutes,
+				ScheduleHours:   hours,
+				ScheduleDays:    days,
+			})
+			log.Printf("[PARSER DEBUG] Added schedule event: minutes=%d, hours=%d, days=%d, type=%s", minutes, hours, days, eventType)
+		}
 	}
 
 	// Handle calendar delete action
