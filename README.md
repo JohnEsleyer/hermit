@@ -1,5 +1,7 @@
 # HermitShell - AI Agent OS
 
+*Last updated: March 2026*
+
 <p align="center">
   <img src="docs/images/banner.svg" alt="HermitShell AI Agent OS" width="100%">
 </p>
