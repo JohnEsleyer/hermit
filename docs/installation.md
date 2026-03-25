@@ -1,5 +1,7 @@
 # Installation Guide
 
+*Last updated: March 2026*
+
 Documentation for installing HermitShell AI Agent OS on a server.
 
 ## Quick Install
