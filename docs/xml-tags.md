@@ -1,10 +1,22 @@
 # XML Tags Reference
 
+*Last updated: March 2026*
+
 > See also: [Parser Contract](../internal/parser/contract.go)
 
 ## Overview
 
 Hermit agents communicate with the system using XML-like tags. These tags are parsed by the LLM and executed by the system.
+
+## Active Zone
+
+The system uses an `<end>` tag to mark the active zone. Everything after the last `<end>` tag is processed as the current response. This allows agents to chain multiple responses together.
+
+```xml
+<message>First response</message>
+<end>
+<message>Second response - this will be processed</message>
+```
 
 ## Tag Reference
 
@@ -22,10 +34,16 @@ Send a message to the active user transport. In Telegram mode it goes to Telegra
 
 ### `<terminal>` - Execute Terminal Command
 
-Run a command inside the agent's Docker container.
+Run a command inside the agent's Docker container. Supports multiple commands in a single response.
 
 ```xml
 <terminal>ls -la /app/workspace/work</terminal>
+```
+
+Multiple commands:
+```xml
+<terminal>mkdir -p /app/workspace/work</terminal>
+<terminal>echo "hello" > /app/workspace/work/test.txt</terminal>
 ```
 
 **Response**: Command output returned to the agent.
@@ -265,12 +283,37 @@ function calc() {
 
 ---
 
+## System Feedback
+
+After executing XML tags, the system provides formatted feedback about the results. This feedback is sent as a system message to the client.
+
+Example feedback format:
+```
+System response:
+- Message queued: "Your task is complete"
+- Files queued: report.pdf
+- Terminal: ls -la /app/workspace/work (SUCCESS)
+  Output: total 4 drwxr-xr-x 2 root root 4096 Mar 25 12:00 .
+- File transfer: report.pdf (SUCCESS)
+- App: calculator (SUCCESS)
+- Calendar: CREATED
+```
+
+Feedback includes:
+- **Message delivery** status
+- **File transfer** results
+- **Terminal command** output
+- **App creation/deployment** status
+- **Calendar** operation results
+
+---
+
 ## Parsing Flow
 
 1. **LLM Response** → Agent sends XML tags
 2. **Parser** (`internal/parser/contract.go`) → Extracts tags
 3. **ExecuteXMLPayload** (`internal/api/server.go`) → Processes each tag
-4. **Feedback** → Results sent back to agent
+4. **Feedback** → Formatted results sent back as system message
 
 ---
 
@@ -278,3 +321,4 @@ function calc() {
 
 - Parser: `internal/parser/contract.go`
 - Executor: `internal/api/server.go` (ExecuteXMLPayload function)
+- System Execution: `internal/api/system_execution.go` (formatSystemExecutionResponse)
