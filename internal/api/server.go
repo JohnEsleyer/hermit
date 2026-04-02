@@ -493,7 +493,8 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	var messages []llm.Message
 
 	systemPrompt := agent.Personality
-	contextPath := "./context.md"
+	agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", agent.ID)
+	contextPath := filepath.Join(agentSkillsPath, "context.md")
 	if content, err := os.ReadFile(contextPath); err == nil {
 		contextStr := string(content)
 		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
