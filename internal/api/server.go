@@ -501,9 +501,9 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	contextPath := filepath.Join(agentSkillsPath, "context.md")
 	if content, err := os.ReadFile(contextPath); err == nil {
 		contextStr := string(content)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+		contextStr = strings.ReplaceAll(contextStr, "{{NAME}}", agent.Name)
+		contextStr = strings.ReplaceAll(contextStr, "{{ROLE}}", agent.Role)
+		contextStr = strings.ReplaceAll(contextStr, "{{PERSONALITY}}", agent.Personality)
 		systemPrompt = contextStr + "\n\n---\n\n" + agent.Personality
 	}
 
@@ -2791,9 +2791,9 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 	contextPath := filepath.Join(agentSkillsPath, "context.md")
 	if content, err := os.ReadFile(contextPath); err == nil {
 		contextStr := string(content)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+		contextStr = strings.ReplaceAll(contextStr, "{{NAME}}", agent.Name)
+		contextStr = strings.ReplaceAll(contextStr, "{{ROLE}}", agent.Role)
+		contextStr = strings.ReplaceAll(contextStr, "{{PERSONALITY}}", agent.Personality)
 		systemPrompt = contextStr + "\n\n---\n\n" + agent.Personality
 	}
 
