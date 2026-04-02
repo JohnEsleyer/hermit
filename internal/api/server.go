@@ -547,13 +547,7 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
 
 	parsed := parser.ParseLLMOutput(response)
-	messageToDisplay := parsed.Message
-	if messageToDisplay == "" {
-		messageToDisplay = response
-	}
-
 	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
-	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", messageToDisplay)
 
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
 	if len(feedback) > 0 {
@@ -566,6 +560,8 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 			files = append(files, action.Value)
 		}
 	}
+
+	s.addHistoryAndBroadcastWithFiles(agent.ID, userID, "assistant", response, files)
 
 	finalResponse := response
 	finalParsedMsg := parsed.Message
@@ -3150,7 +3146,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 	// Reference: docs/xml-tags.md. Media type decides whether Telegram gets a document, photo, or video.
 	for _, action := range parsed.Actions {
 		if action.Type == "GIVE" {
-			if agentID > 0 && bot != nil {
+			if agentID > 0 {
 				containerFilePath := "/app/workspace/out/" + action.Value
 
 				content, err := s.docker.ReadFile(containerName, containerFilePath)
@@ -3180,7 +3176,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 	// 5. Handle <app> tag - Create and publish web app
 	for _, app := range parsed.Apps {
-		if agentID > 0 && bot != nil {
+		if agentID > 0 {
 			// Create app folder and files in container
 			appFolder := "/app/workspace/apps/" + app.Name
 
@@ -3245,7 +3241,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 	// Handle <deploy>app-name</deploy>
 	for _, appName := range parsed.Deploys {
-		if agentID > 0 && bot != nil {
+		if agentID > 0 {
 			s.db.LogAction(agentID, "system", "action_app_deployed", fmt.Sprintf("App: %s deployed", appName))
 
 			tunnelURL := s.tunnels.GetURL("dashboard")
