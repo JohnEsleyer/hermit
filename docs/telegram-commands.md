@@ -10,6 +10,38 @@ Welcome message. Shows a brief introduction to Hermit and how to get help.
 ### /help
 Displays all available commands with brief descriptions.
 
+### /status
+Shows the agent's current configuration and health status.
+
+**Usage:**
+```
+/status
+```
+
+**Response:**
+```
+🤖 *Agent Status: Ralph*
+
+• Model: `openai/gpt-4o`
+• Provider: `openrouter`
+• Context Window: `2048` tokens
+• LLM API Calls: `142`
+• Container: `agent-ralph` (Running ✅)
+• Connection: Long Polling Active ✅
+
+🔐 *Authorization*
+• Allowed Users: `123456789,987654321`
+• Your User ID: `123456789`
+• Status: ⚠️ Restricted
+
+🌐 *Dashboard*: `https://xxx.trycloudflare.com`
+```
+
+**When to use:**
+- To check if the agent's container is running
+- To verify LLM configuration
+- To see your authorization status
+
 ## Context Management
 
 ### /clear
@@ -46,6 +78,27 @@ Current context size: ~1234 tokens
 **When to use:**
 - To monitor context size and prevent exceeding limits
 - Before using /clear to understand how much context you have
+
+### /files
+Lists files in the agent's `/app/workspace/out/` folder.
+
+**Usage:**
+```
+/files
+```
+
+**Response:**
+```
+📁 Files in /app/workspace/out:
+
+• report.pdf (2.1MB)
+• song.txt (4.2KB)
+• image.jpg (1.5MB)
+```
+
+**When to use:**
+- To see what files are available to give to the user
+- To verify a file exists before requesting it with `<give>`
 
 ## Container Control
 
