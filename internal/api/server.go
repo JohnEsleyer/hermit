@@ -421,8 +421,12 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	}
 
 	userText := strings.TrimSpace(req.Message)
-	if userText != "" && strings.HasPrefix(userText, "enc:") {
-		decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
+	if userText != "" && (strings.HasPrefix(userText, "enc:") || strings.HasPrefix(userText, "cbc:")) {
+		prefix := "enc:"
+		if strings.HasPrefix(userText, "cbc:") {
+			prefix = "cbc:"
+		}
+		decrypted, err := crypto.Decrypt(userText[len(prefix):], crypto.DeriveKey("hermit123"))
 		if err == nil {
 			userText = decrypted
 		}
