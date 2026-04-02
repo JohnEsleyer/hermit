@@ -1298,7 +1298,13 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	// Create agent-specific skills folder with context.md
 	agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", id)
 	os.MkdirAll(agentSkillsPath, 0755)
-	os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), []byte(a.Personality), 0644)
+	// Use global context.md as base (template vars will be replaced at runtime)
+	globalContextPath := "./context.md"
+	if globalContent, err := os.ReadFile(globalContextPath); err == nil {
+		os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), globalContent, 0644)
+	} else {
+		os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), []byte(a.Personality), 0644)
+	}
 
 	// Create and start Docker container for the agent
 	go func() {
@@ -1704,17 +1710,25 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 		s.db.ClearHistory(agent.ID)
 		s.broadcastConversationCleared(agent.ID)
 
-		// Reset context to default (agent's personality as initial context)
+		// Reset context to default (global context.md with template variables)
 		agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", agent.ID)
 		if err := os.MkdirAll(agentSkillsPath, 0755); err != nil {
 			response = "❌ Chat history cleared, but failed to reset context"
 			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (mkdir failed: "+err.Error()+")")
 			return c.JSON(fiber.Map{"message": response, "role": "system"})
 		}
+		// Read global context.md and write to agent's context.md (with template vars)
+		globalContextPath := "./context.md"
+		globalContent, err := os.ReadFile(globalContextPath)
+		if err != nil {
+			response = "❌ Chat history cleared, but failed to reset context (global context not found)"
+			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (global context read failed: "+err.Error()+")")
+			return c.JSON(fiber.Map{"message": response, "role": "system"})
+		}
 		contextPath := fmt.Sprintf("%s/context.md", agentSkillsPath)
-		if err := os.WriteFile(contextPath, []byte(agent.Personality), 0644); err != nil {
+		if err := os.WriteFile(contextPath, globalContent, 0644); err != nil {
 			response = "❌ Chat history cleared, but failed to reset context"
-			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (context reset failed: "+err.Error()+")")
+			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (context write failed: "+err.Error()+")")
 			return c.JSON(fiber.Map{"message": response, "role": "system"})
 		}
 
@@ -2666,6 +2680,17 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 
 	case "/clear":
 		s.db.ClearHistory(agent.ID)
+		// Reset context to default (global context.md)
+		agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", agent.ID)
+		if err := os.MkdirAll(agentSkillsPath, 0755); err != nil {
+			bot.SendMessage(chatID, "🧹 Context cleared, but failed to reset context file")
+		} else {
+			globalContextPath := "./context.md"
+			if globalContent, err := os.ReadFile(globalContextPath); err == nil {
+				contextPath := fmt.Sprintf("%s/context.md", agentSkillsPath)
+				os.WriteFile(contextPath, globalContent, 0644)
+			}
+		}
 		bot.SendMessage(chatID, "🧹 Context window and chat history cleared!")
 
 	case "/reset":
@@ -2762,7 +2787,8 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 
 	// System prompt: prepend context.md instructions to agent personality
 	systemPrompt := agent.Personality
-	contextPath := "./context.md"
+	agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", agent.ID)
+	contextPath := filepath.Join(agentSkillsPath, "context.md")
 	if content, err := os.ReadFile(contextPath); err == nil {
 		contextStr := string(content)
 		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
