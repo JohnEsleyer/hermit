@@ -69,6 +69,14 @@ func (s *Server) setupRoutes(app *fiber.App) {
     api.Get("/agents/:id", s.HandleGetAgent)
     api.Put("/agents/:id", s.HandleUpdateAgent)
     api.Delete("/agents/:id", s.HandleDeleteAgent)
+    api.Post("/agents/:id/action", s.HandleAgentAction)
+    api.Post("/agents/:id/chat", s.HandleAgentChat)
+    api.Get("/agents/:id/logs", s.HandleGetAgentLogs)
+    api.Get("/agents/:id/history", s.HandleGetAgentHistory)
+    api.Get("/agents/:id/stats", s.HandleGetAgentStats)
+    api.Get("/agents/:id/context", s.HandleGetAgentContextWindow)
+    api.Get("/agents/:id/last-message", s.HandleGetLastMessage)
+    api.Get("/agents/:id/unread", s.HandleGetUnreadCount)
 
     // Calendar routes
     api.Get("/calendar", s.HandleListCalendar)
@@ -100,14 +108,34 @@ func (s *Server) setupRoutes(app *fiber.App) {
     api.Get("/settings", s.HandleGetSettings)
     api.Post("/settings", s.HandleSetSettings)
     api.Get("/tunnel-url", s.HandleGetTunnelURL)
+    api.Get("/time", s.HandleGetTime)
+
+    // Apps
+    api.Get("/apps", s.HandleGetAllApps)
+    api.Get("/agents/:id/apps", s.HandleListApps)
+    api.Delete("/agents/:id/apps/:appName", s.HandleDeleteApp)
 
     // Backup and Restore
     api.Get("/backup/export", s.HandleExportBackup)
     api.Post("/backup/import", s.HandleImportBackup)
 
-    // Telegram (long polling - no webhook routes needed)
+    // Test & Debug
+    api.Post("/test-contract", s.HandleTestContract)
+
+    // Image Upload
+    api.Post("/images/upload", s.HandleImageUpload)
+
+    // Telegram
     api.Post("/telegram/send-code", s.HandleTelegramSendCode)
     api.Post("/telegram/verify", s.HandleTelegramVerify)
+
+    // Agent Skills (per-agent)
+    api.Get("/agents/:id/skills", s.HandleListAgentSkills)
+    api.Post("/agents/:id/skills", s.HandleSaveSkill)
+    api.Delete("/agents/:id/skills/:skillId", s.HandleDeleteSkill)
+
+    // WebSocket
+    api.Get("/ws", websocket.New(...))
 
     // Static file serving
     s.setupStaticRoutes(app)

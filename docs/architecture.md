@@ -14,9 +14,9 @@ HermitShell is an AI Agent Orchestration System that enables autonomous agents t
 - **Purpose:** User interface for managing agents, viewing metrics, configuring settings
 
 ### 2. CLI (Go)
-- **Binary:** `hermitshell`
+- **Binary:** `hermit-cli`
 - **Purpose:** Terminal interface for managing agents, containers, and server lifecycle (status, start, stop, restart)
-- **Reference:** See `docs/installation.md#cli-usage` or run `hermitshell help`
+- **Reference:** See `docs/installation.md#cli-usage` or run `hermit-cli help`
 
 ### 3. Agent Runtime (Docker)
 - Each agent runs in an isolated Docker container
@@ -33,9 +33,18 @@ Supports multiple providers:
 - **Anthropic** (Claude)
 - **Google Gemini**
 
-### 5. Telegram Bot Integration
-- Long polling for message handling (architectural simplicity)
-- Commands: `/start`, `/help`, `/clear`, `/tokens`, `/reset`, `/takeover`, `/give_system_prompt`, `/give_context`
+### 5. Transport Integration
+HermitShell supports two transport mechanisms for agent communication:
+
+#### Telegram Bot
+- Long polling for message handling (no webhook needed)
+- Commands: `/start`, `/help`, `/status`, `/clear`, `/reset`, `/takeover`, `/files`, `/give_system_prompt`, `/give_context`
+
+#### HermitChat (Mobile App)
+- Flutter-based mobile companion app
+- HTTP REST API communication (no bot token needed)
+- Real-time updates via WebSocket
+- Command palette with slash commands (`/status`, `/reset`, `/clear`, `/files`) and XML tag snippets (`<message>`, `<terminal>`, `<give>`, etc.)
 
 ## Public URL Strategy
 

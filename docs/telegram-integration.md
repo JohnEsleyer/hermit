@@ -207,6 +207,7 @@ Polling is automatically managed based on agent state:
 | `/clear` | Clear chat history |
 | `/reset` | Reset container |
 | `/takeover` | Toggle manual XML mode |
+| `/files` | List files in out folder |
 | `/give_system_prompt` | Get agent personality |
 | `/give_context` | Get conversation history |
 

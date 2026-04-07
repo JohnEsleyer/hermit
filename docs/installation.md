@@ -147,7 +147,7 @@ cloudflared --version
 
 ## CLI Usage
 
-HermitShell includes a CLI tool called `hermitshell` to manage the system from the terminal.
+HermitShell includes a CLI tool called `hermit-cli` to manage the system from the terminal.
 
 ### Authentication
 The CLI will prompt for credentials on first use and save them to `~/.hermit/credentials`. You can also automate this by setting these environment variables in your `.env` file:
@@ -156,17 +156,17 @@ The CLI will prompt for credentials on first use and save them to `~/.hermit/cre
 - `HERMIT_CLI_PASS`: Password for auto-login
 
 ### Common Commands
-- `hermitshell agents list`: List all agents and their status.
-- `hermitshell containers list`: View real-time container metrics (CPU/Memory).
-- `hermitshell tunnel`: Display the current public tunnel URL.
-- `hermitshell logout`: Clear session and cached credentials.
+- `hermit-cli agents list`: List all agents and their status.
+- `hermit-cli containers list`: View real-time container metrics (CPU/Memory).
+- `hermit-cli tunnel`: Display the current public tunnel URL.
+- `hermit-cli logout`: Clear session and cached credentials.
 
 ### Service Management
 You can control the Hermit server service directly from the CLI:
-- **`hermitshell status`**: Check if the server is running and the API is responsive.
-- **`hermitshell start`**: Start the Hermit background service (`systemctl`).
-- **`hermitshell stop`**: Stop the Hermit background service.
-- **`hermitshell restart`**: Restart the Hermit background service.
+- **`hermit-cli status`**: Check if the server is running and the API is responsive.
+- **`hermit-cli start`**: Start the Hermit background service (`systemctl`).
+- **`hermit-cli stop`**: Stop the Hermit background service.
+- **`hermit-cli restart`**: Restart the Hermit background service.
 
 ## Updating
 
@@ -179,7 +179,7 @@ make all
 
 ```bash
 # Stop the server
-hermitshell stop
+hermit-cli stop
 
 # Remove files (optional)
 rm -rf hermit-server data/ hermit-agent:latest
