@@ -479,13 +479,13 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 			}
 
 			response := formatSystemExecutionResponse(parsedInput, feedback)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
-			return c.JSON(fiber.Map{"message": response, "files": files, "role": "system"})
+			s.addHistoryAndBroadcastWithFiles(agent.ID, "system", "assistant", response, files)
+			return c.JSON(fiber.Map{"message": response, "files": files, "role": "assistant"})
 		} else {
 			// No XML tags detected in takeover mode
 			s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", "System: No XML commands detected. In takeover mode, use XML tags like <terminal>, <give>, <calendar>, etc.")
-			return c.JSON(fiber.Map{"message": "System: No XML commands detected", "role": "system"})
+			s.addHistoryAndBroadcast(agent.ID, "system", "assistant", "System: No XML commands detected. In takeover mode, use XML tags like <terminal>, <give>, <calendar>, etc.")
+			return c.JSON(fiber.Map{"message": "System: No XML commands detected", "role": "assistant"})
 		}
 	}
 
@@ -1732,16 +1732,93 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 		s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
 		return c.JSON(fiber.Map{"message": response, "role": "system"})
 
+	case "/files":
+		containerName := agent.ContainerID
+		if containerName == "" {
+			containerName = "agent-" + strings.ToLower(agent.Name)
+		}
+
+		outFiles, err := s.docker.ListContainerFiles(containerName, "/app/workspace/out")
+		if err != nil {
+			response = "❌ Failed to list files. Ensure the agent container is running."
+		} else if len(outFiles) == 0 {
+			response = "📁 No files found in `/app/workspace/out`."
+		} else {
+			var fileList string
+			for _, f := range outFiles {
+				icon := "📄"
+				ext := strings.ToLower(filepath.Ext(f.Name))
+				if ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" {
+					icon = "🖼️"
+				} else if ext == ".mp4" || ext == ".mov" || ext == ".webm" {
+					icon = "🎥"
+				}
+
+				sizeStr := fmt.Sprintf("%d B", f.Size)
+				if f.Size > 1024*1024 {
+					sizeStr = fmt.Sprintf("%.1f MB", float64(f.Size)/(1024*1024))
+				} else if f.Size > 1024 {
+					sizeStr = fmt.Sprintf("%.1f KB", float64(f.Size)/1024)
+				}
+				fileList += fmt.Sprintf("%s %s (%s)\n", icon, f.Name, sizeStr)
+			}
+			response = fmt.Sprintf("📁 *Available Files in /out (%d)*\n━━━━━━━━━━━━━━━━━━━━━━\n%s━━━━━━━━━━━━━━━━━━━━━━\nUse `/give [filename]` to download.", len(outFiles), fileList)
+
+			s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
+			s.addHistoryAndBroadcast(agent.ID, "system", "assistant", response)
+			s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
+
+			return c.JSON(fiber.Map{
+				"message": response,
+				"role":    "assistant",
+			})
+		}
+
+	case "/give":
+		if len(parts) < 2 {
+			response = "❌ Usage: `/give [filename]`"
+		} else {
+			filename := parts[1]
+			containerName := agent.ContainerID
+			if containerName == "" {
+				containerName = "agent-" + strings.ToLower(agent.Name)
+			}
+			outFiles, _ := s.docker.ListContainerFiles(containerName, "/app/workspace/out")
+			found := false
+			for _, f := range outFiles {
+				if f.Name == filename {
+					found = true
+					break
+				}
+			}
+			if !found {
+				response = fmt.Sprintf("❌ File `%s` not found in `/out`.", filename)
+			} else {
+				response = fmt.Sprintf("📦 Here is your file: `%s`", filename)
+				s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
+				s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
+				s.addHistoryAndBroadcastWithFiles(agent.ID, "system", "assistant", response, []string{filename})
+				s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
+
+				return c.JSON(fiber.Map{
+					"message": response,
+					"role":    "assistant",
+					"files":   []string{filename},
+				})
+			}
+		}
+
 	default:
 		response = fmt.Sprintf("Unknown command: %s", cmd)
 	}
 
 	s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
 	s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
-	s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
+	s.addHistoryAndBroadcast(agent.ID, "system", "assistant", response)
 	s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
 
-	return c.JSON(fiber.Map{"message": response, "role": "system"})
+	return c.JSON(fiber.Map{"message": response, "role": "assistant"})
 }
 
 func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
